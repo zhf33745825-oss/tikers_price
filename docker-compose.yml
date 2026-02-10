@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    container_name: tikers_price_app
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "file:../data/app.db"
+      MAX_QUERY_SYMBOLS: "20"
+      DEFAULT_WATCHLIST: "AAPL,MSFT,GOOGL,0700.HK,9988.HK"
+      UPDATE_API_TOKEN: "change-this-token"
+      TZ: "Asia/Shanghai"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+

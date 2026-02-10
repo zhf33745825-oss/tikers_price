@@ -1,0 +1,50 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model WatchSymbol {
+  id          String   @id @default(cuid())
+  symbol      String   @unique
+  displayName String?
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model DailyPrice {
+  id        String   @id @default(cuid())
+  symbol    String
+  tradeDate DateTime
+  close     Decimal
+  adjClose  Decimal
+  currency  String
+  source    String   @default("yahoo")
+  fetchedAt DateTime @default(now())
+
+  @@index([symbol])
+  @@unique([symbol, tradeDate])
+}
+
+enum JobStatus {
+  success
+  partial
+  failed
+}
+
+model UpdateJobLog {
+  id             String    @id @default(cuid())
+  jobDate        DateTime
+  startedAt      DateTime
+  endedAt        DateTime
+  status         JobStatus
+  totalSymbols   Int
+  successSymbols Int
+  failedSymbols  Int
+  message        String?
+  createdAt      DateTime  @default(now())
+}

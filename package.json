@@ -1,0 +1,51 @@
+{
+  "name": "tikers_price",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "prisma migrate deploy && tsx scripts/bootstrap-watchlist.ts && next dev",
+    "build": "prisma generate && next build",
+    "start": "prisma migrate deploy && tsx scripts/bootstrap-watchlist.ts && next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "bootstrap:watchlist": "tsx scripts/bootstrap-watchlist.ts",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.17.0",
+    "@prisma/adapter-libsql": "^7.3.0",
+    "@prisma/client": "^7.3.0",
+    "dayjs": "^1.11.19",
+    "dotenv": "^17.2.4",
+    "echarts": "^6.0.0",
+    "echarts-for-react": "^3.0.6",
+    "next": "16.1.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "yahoo-finance2": "^3.13.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "jsdom": "^28.0.0",
+    "prisma": "^7.3.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.21.0",
+    "typescript": "^5",
+    "vitest": "^4.0.18"
+  }
+}
