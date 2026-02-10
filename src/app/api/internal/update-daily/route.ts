@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(
-      { error: `每日更新失败: ${toErrorMessage(error)}` },
+      { error: `daily update failed: ${toErrorMessage(error)}` },
       { status: 500 },
     );
   }

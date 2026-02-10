@@ -132,8 +132,9 @@ export function PriceChart({ series }: PriceChartProps) {
 
   return (
     <div className="panel">
-      <h3 className="panel-title">历史收盘价趋势 (Close)</h3>
+      <h3 className="panel-title">Historical Close Trend</h3>
       <ReactECharts option={option} notMerge style={{ height: 420, width: "100%" }} />
     </div>
   );
 }
+

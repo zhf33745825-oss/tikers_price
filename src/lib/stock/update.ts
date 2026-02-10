@@ -7,10 +7,11 @@ import { ensureDefaultWatchlist } from "@/lib/stock/bootstrap";
 import {
   createUpdateJobLog,
   getLastTradeDateForSymbol,
-  listWatchSymbols,
+  listWatchSymbolRecords,
+  updateWatchSymbolAutoMeta,
   upsertDailyPrices,
 } from "@/lib/stock/repository";
-import { fetchHistoricalFromYahoo } from "@/lib/stock/yahoo";
+import { fetchHistoricalFromYahoo, fetchQuoteMetadataFromYahoo } from "@/lib/stock/yahoo";
 import type { DailyUpdateResult } from "@/types/stock";
 
 dayjs.extend(utc);
@@ -39,7 +40,18 @@ export async function retryWithBackoff<T>(
   throw lastError;
 }
 
+async function refreshSymbolMeta(symbol: string): Promise<void> {
+  try {
+    const quoteMeta = await fetchQuoteMetadataFromYahoo(symbol);
+    await updateWatchSymbolAutoMeta(symbol, quoteMeta);
+  } catch {
+    // Meta refresh is best-effort and should not fail the daily update job.
+  }
+}
+
 async function updateSingleSymbol(symbol: string, now: Date): Promise<number> {
+  await refreshSymbolMeta(symbol);
+
   const lastTradeDate = await getLastTradeDateForSymbol(symbol);
 
   const fromDate = lastTradeDate
@@ -63,7 +75,7 @@ export async function runDailyUpdate(now = new Date()): Promise<DailyUpdateResul
   await ensureDefaultWatchlist();
 
   const startedAt = new Date();
-  const watchlist = await listWatchSymbols(true);
+  const watchlist = await listWatchSymbolRecords(true);
   const failures: Array<{ symbol: string; error: string }> = [];
   let successSymbols = 0;
   let failedSymbols = 0;

@@ -41,7 +41,7 @@ describe("GET /api/prices", () => {
     const body = await response.json();
 
     expect(response.status).toBe(400);
-    expect(body.error).toContain("最多支持查询");
+    expect(body.error).toContain("at most");
     expect(queryHistoricalSeriesMock).not.toHaveBeenCalled();
   });
 });

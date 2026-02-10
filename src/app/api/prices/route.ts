@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: `历史数据查询失败: ${toErrorMessage(error)}` },
+      { error: `historical query failed: ${toErrorMessage(error)}` },
       { status: 500 },
     );
   }

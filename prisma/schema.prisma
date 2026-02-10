@@ -8,12 +8,20 @@ datasource db {
 }
 
 model WatchSymbol {
-  id          String   @id @default(cuid())
-  symbol      String   @unique
-  displayName String?
-  enabled     Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String    @id @default(cuid())
+  symbol        String    @unique
+  displayName   String?
+  regionOverride String?
+  autoName      String?
+  autoRegion    String?
+  autoCurrency  String?
+  metaUpdatedAt DateTime?
+  enabled       Boolean   @default(true)
+  sortOrder     Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([enabled, sortOrder])
 }
 
 model DailyPrice {

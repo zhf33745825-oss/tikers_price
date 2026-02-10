@@ -25,8 +25,8 @@ export async function queryHistoricalSeries(
         await upsertDailyPrices(symbol, fetchedPoints);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "拉取失败";
-      warnings.push(`${symbol}: Yahoo Finance 拉取失败 (${message})`);
+      const message = error instanceof Error ? error.message : "fetch failed";
+      warnings.push(`${symbol}: Yahoo fetch failed (${message})`);
     }
   }
 
@@ -39,7 +39,7 @@ export async function queryHistoricalSeries(
 
   for (const symbol of input.symbols) {
     if (!availableSymbols.has(symbol)) {
-      warnings.push(`${symbol}: 在所选时间范围内没有可用数据`);
+      warnings.push(`${symbol}: no data found in selected range`);
     }
   }
 

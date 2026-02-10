@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-test("query page and watchlist admin page should render", async ({ page }) => {
+test("home matrix and watchlist admin page should render", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("历史收盘价查询")).toBeVisible();
+  await expect(page.getByText("Stock Close Matrix")).toBeVisible();
+  await expect(page.getByRole("button", { name: "30D" })).toBeVisible();
 
-  await page.getByRole("link", { name: "清单管理" }).click();
-  await expect(page.getByText("自动更新股票清单")).toBeVisible();
+  await page.getByRole("link", { name: "Watchlist Admin" }).click();
+  await expect(page.getByText("Watchlist Manager")).toBeVisible();
 });
 

@@ -22,7 +22,15 @@ export interface PriceQueryResponse {
 export interface WatchlistItem {
   symbol: string;
   displayName: string | null;
+  regionOverride: string | null;
+  autoName: string | null;
+  autoRegion: string | null;
+  autoCurrency: string | null;
+  metaUpdatedAt: string | null;
+  resolvedName: string;
+  resolvedRegion: string;
   enabled: boolean;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -46,5 +54,30 @@ export interface DailyUpdateResult {
     symbol: string;
     error: string;
   }>;
+}
+
+export type MatrixPreset = "7" | "30" | "90" | "custom";
+export type MatrixMode = "watchlist" | "adhoc";
+
+export interface MatrixRow {
+  symbol: string;
+  name: string;
+  region: string;
+  currency: string;
+  latestClose: number | null;
+  pricesByDate: Record<string, number | null>;
+}
+
+export interface MatrixPriceResponse {
+  mode: MatrixMode;
+  range: {
+    from: string;
+    to: string;
+    preset: MatrixPreset;
+  };
+  dates: string[];
+  displayDates: string[];
+  rows: MatrixRow[];
+  warnings: string[];
 }
 

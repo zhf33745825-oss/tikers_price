@@ -1,125 +1,135 @@
-# 在线股票历史收盘价查询网站
+# Stock Close Matrix
 
-基于 `Next.js + Prisma + SQLite + Yahoo Finance` 的全栈应用，支持：
+Next.js + Prisma + SQLite + Yahoo Finance application for stock history and daily updates.
 
-- 多股票代码历史查询（单次最多 20 个）
-- 同时展示 `Close` 和 `Adj Close`
-- 折线图 + 明细表格
-- 后台维护每日自动更新清单
-- `Asia/Shanghai` 时区下按 cron 每日更新
+## Features
 
-## 技术栈
+- Home page matrix table:
+  - `Code -> Name -> Region -> Ccy -> Daily Close columns`
+  - 7D / 30D / 90D / custom range
+  - Trade-day union columns, missing values shown as `N/A`
+  - Sticky header + sticky first 4 columns
+  - Wide-table horizontal virtual rendering
+- Watchlist-driven default view with manual ordering
+- Admin overrides for name and region
+- Advanced panel for adhoc symbols and historical chart/table
+- Daily auto-update endpoint for cron
+
+## Tech Stack
 
 - Next.js App Router + TypeScript
-- Prisma ORM + SQLite
-- Yahoo Finance 数据源：`yahoo-finance2`
-- 图表：Apache ECharts
-- 测试：Vitest + Playwright
+- Prisma + SQLite
+- Yahoo Finance via `yahoo-finance2`
+- ECharts for trend chart
+- Vitest + Playwright
 
-## 本地启动
+## Local Setup
 
-1. 安装依赖
+1. Install dependencies:
 
 ```bash
 npm install
 ```
 
-2. 配置环境变量
+2. Create env file:
 
 ```bash
 cp .env.example .env
 ```
 
-3. 初始化数据库迁移
+3. Apply migrations:
 
 ```bash
 npm run prisma:deploy
 ```
 
-4. 启动开发环境
+4. Start dev server:
 
 ```bash
 npm run dev
 ```
 
-启动后访问 `http://localhost:3000`。
+Open `http://localhost:3000`.
 
-## 环境变量
+## Environment Variables
 
-`.env.example` 中包含以下关键配置：
+See `.env.example`:
 
-- `DATABASE_URL`: SQLite 地址，默认 `file:../data/app.db`
-- `MAX_QUERY_SYMBOLS`: 单次查询股票代码上限（默认 20）
-- `DEFAULT_WATCHLIST`: 启动时空清单的默认预置代码
-- `UPDATE_API_TOKEN`: 内部更新 API 的令牌
-- `TZ`: 推荐 `Asia/Shanghai`
+- `DATABASE_URL` (default `file:../data/app.db`)
+- `MAX_QUERY_SYMBOLS` (default `20`)
+- `DEFAULT_WATCHLIST`
+- `UPDATE_API_TOKEN`
+- `TZ` (recommended `Asia/Shanghai`)
 
-## API 说明
+## API
 
 1. `GET /api/prices`
+- Legacy compatible historical series API (for chart panel).
+
+2. `GET /api/prices/matrix`
 - Query:
-  - `symbols` 必填，支持逗号/空格/换行输入
-  - `from` 可选，`YYYY-MM-DD`
-  - `to` 可选，`YYYY-MM-DD`
-- 返回：
-  - `range: { from, to }`
-  - `series: [{ symbol, currency, points: [{ date, close, adjClose }] }]`
-  - `warnings: string[]`
+  - `mode=watchlist|adhoc` (default `watchlist`)
+  - `preset=7|30|90|custom` (default `30`)
+  - `from` / `to` required when `preset=custom`
+  - `symbols` required when `mode=adhoc`
+- Response includes:
+  - `dates`
+  - `displayDates`
+  - `rows`
+  - `warnings`
+  - `range`
 
-2. `GET /api/admin/watchlist`
-- 返回自动更新清单和最近成功更新时间
+3. `GET /api/admin/watchlist`
+- Returns watchlist with sort order, overrides, and resolved fields.
 
-3. `POST /api/admin/watchlist`
-- Body: `{ "symbol": "AAPL", "displayName": "Apple" }`
+4. `POST /api/admin/watchlist`
+- Body:
+```json
+{ "symbol": "AAPL", "displayName": "Apple", "regionOverride": "US" }
+```
 
-4. `DELETE /api/admin/watchlist/:symbol`
-- 删除清单代码
+5. `PATCH /api/admin/watchlist/:symbol`
+- Update name/region override.
 
-5. `POST /api/internal/update-daily`
-- 用于定时任务触发
+6. `DELETE /api/admin/watchlist/:symbol`
+- Remove symbol from watchlist.
+
+7. `POST /api/admin/watchlist/reorder`
+- Body:
+```json
+{ "symbol": "AAPL", "direction": "up" }
+```
+
+8. `POST /api/internal/update-daily`
+- Trigger daily refresh job.
 - Header: `x-update-token: <UPDATE_API_TOKEN>`
 
-## 每日自动更新（cron）
+## Daily Cron
 
-推荐每天 `08:30`（上海时区）执行：
+Example (`08:30 Asia/Shanghai`):
 
 ```bash
 APP_URL=http://127.0.0.1:3000 UPDATE_API_TOKEN=your-token sh scripts/cron/run-daily-update.sh
 ```
 
-Linux crontab 示例：
+Crontab:
 
 ```cron
 30 8 * * * TZ=Asia/Shanghai APP_URL=http://127.0.0.1:3000 UPDATE_API_TOKEN=your-token /bin/sh /path/to/scripts/cron/run-daily-update.sh >> /var/log/stock_update.log 2>&1
 ```
 
-Windows 可用：
-
-```powershell
-powershell -File scripts/cron/run-daily-update.ps1 -AppUrl "http://127.0.0.1:3000" -UpdateApiToken "your-token"
-```
-
-## Docker 部署
-
-构建并启动：
+## Docker
 
 ```bash
 docker compose up -d --build
 ```
 
-应用端口默认 `3000`，SQLite 数据通过 `./data -> /app/data` 挂载持久化。
+SQLite persistence: `./data -> /app/data`.
 
-## 测试
-
-- 单元 + 集成：
+## Tests
 
 ```bash
 npm test
-```
-
-- E2E：
-
-```bash
 npm run test:e2e
 ```
 

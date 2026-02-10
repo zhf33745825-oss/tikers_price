@@ -9,8 +9,8 @@ import { InputError } from "@/lib/stock/errors";
 const singleSymbolSchema = z
   .string()
   .trim()
-  .min(1, "股票代码不能为空")
-  .max(20, "股票代码长度不能超过 20 个字符");
+  .min(1, "symbol is required")
+  .max(20, "symbol length cannot exceed 20");
 
 function normalizeSymbol(symbol: string): string {
   return symbol.trim().toUpperCase();
@@ -19,13 +19,13 @@ function normalizeSymbol(symbol: string): string {
 export function validateSingleSymbol(rawSymbol: string): string {
   const parsedResult = singleSymbolSchema.safeParse(rawSymbol);
   if (!parsedResult.success) {
-    throw new InputError(parsedResult.error.issues[0]?.message ?? "股票代码不合法");
+    throw new InputError(parsedResult.error.issues[0]?.message ?? "invalid symbol");
   }
   const parsed = parsedResult.data;
   const symbol = normalizeSymbol(parsed);
 
   if (!SYMBOL_PATTERN.test(symbol)) {
-    throw new InputError(`股票代码格式不合法: ${symbol}`);
+    throw new InputError(`invalid symbol format: ${symbol}`);
   }
 
   return symbol;
@@ -42,19 +42,20 @@ export function parseSymbolsInput(
     .map((part) => part.toUpperCase());
 
   if (symbols.length === 0) {
-    throw new InputError("请至少输入一个股票代码");
+    throw new InputError("please provide at least one symbol");
   }
 
   const deduped = Array.from(new Set(symbols));
 
   if (deduped.length > maxSymbols) {
-    throw new InputError(`单次最多支持查询 ${maxSymbols} 个股票代码`);
+    throw new InputError(`at most ${maxSymbols} symbols are allowed per request`);
   }
 
   const invalidSymbols = deduped.filter((symbol) => !SYMBOL_PATTERN.test(symbol));
   if (invalidSymbols.length > 0) {
-    throw new InputError(`以下股票代码格式不合法: ${invalidSymbols.join(", ")}`);
+    throw new InputError(`invalid symbol format: ${invalidSymbols.join(", ")}`);
   }
 
   return deduped;
 }
+

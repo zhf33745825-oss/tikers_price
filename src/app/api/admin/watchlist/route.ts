@@ -12,8 +12,9 @@ import { validateSingleSymbol } from "@/lib/stock/symbols";
 import type { WatchlistResponse } from "@/types/stock";
 
 const createWatchSymbolSchema = z.object({
-  symbol: z.string().min(1, "symbol 不能为空"),
+  symbol: z.string().min(1, "symbol is required"),
   displayName: z.string().max(100).optional(),
+  regionOverride: z.string().max(100).optional(),
 });
 
 export async function GET() {
@@ -33,7 +34,7 @@ export async function GET() {
     return NextResponse.json(response);
   } catch (error) {
     return NextResponse.json(
-      { error: `读取清单失败: ${toErrorMessage(error)}` },
+      { error: `failed to load watchlist: ${toErrorMessage(error)}` },
       { status: 500 },
     );
   }
@@ -43,19 +44,19 @@ export async function POST(request: NextRequest) {
   try {
     const payload = createWatchSymbolSchema.parse(await request.json());
     const symbol = validateSingleSymbol(payload.symbol);
-    const item = await addWatchSymbol(symbol, payload.displayName);
+    const item = await addWatchSymbol(symbol, payload.displayName, payload.regionOverride);
 
     return NextResponse.json(item, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message ?? "参数错误" }, { status: 400 });
+      return NextResponse.json({ error: error.issues[0]?.message ?? "invalid payload" }, { status: 400 });
     }
     if (error instanceof InputError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
     return NextResponse.json(
-      { error: `新增清单失败: ${toErrorMessage(error)}` },
+      { error: `failed to add symbol: ${toErrorMessage(error)}` },
       { status: 500 },
     );
   }

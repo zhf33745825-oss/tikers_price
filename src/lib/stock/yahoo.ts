@@ -1,12 +1,23 @@
 import YahooFinance from "yahoo-finance2";
 
 import { parseDateKeyToDate, toDateKey } from "@/lib/stock/dates";
+import { inferRegionFromExchange, inferRegionFromSymbol } from "@/lib/stock/region";
 
 interface YahooHistoricalRow {
   date?: Date;
   close?: number | null;
   adjClose?: number | null;
   adjclose?: number | null;
+  currency?: string;
+}
+
+interface YahooQuoteRow {
+  shortName?: string;
+  longName?: string;
+  displayName?: string;
+  fullExchangeName?: string;
+  exchange?: string;
+  market?: string;
   currency?: string;
 }
 
@@ -21,6 +32,45 @@ export interface FetchedHistoricalPoint {
   currency: string;
 }
 
+export interface QuoteMetadata {
+  autoName: string | null;
+  autoRegion: string | null;
+  autoCurrency: string | null;
+}
+
+function resolveNameFromQuote(quote: YahooQuoteRow): string | null {
+  const name = quote.displayName ?? quote.shortName ?? quote.longName;
+  return typeof name === "string" && name.trim().length > 0 ? name.trim() : null;
+}
+
+function resolveRegionFromQuote(symbol: string, quote: YahooQuoteRow): string {
+  const exchangeText = [
+    quote.fullExchangeName,
+    quote.exchange,
+    quote.market,
+  ]
+    .filter((item): item is string => typeof item === "string" && item.length > 0)
+    .join(" ");
+
+  if (exchangeText.length > 0) {
+    return inferRegionFromExchange(exchangeText, symbol);
+  }
+
+  return inferRegionFromSymbol(symbol);
+}
+
+export async function fetchQuoteMetadataFromYahoo(symbol: string): Promise<QuoteMetadata> {
+  const quote = (await yahooFinance.quote(symbol)) as YahooQuoteRow;
+
+  return {
+    autoName: resolveNameFromQuote(quote),
+    autoRegion: resolveRegionFromQuote(symbol, quote),
+    autoCurrency: typeof quote.currency === "string" && quote.currency.length > 0
+      ? quote.currency
+      : null,
+  };
+}
+
 async function resolveCurrency(
   symbol: string,
   fallbackCurrency: string | undefined,
@@ -30,9 +80,9 @@ async function resolveCurrency(
   }
 
   try {
-    const quote = (await yahooFinance.quote(symbol)) as { currency?: string };
-    if (typeof quote.currency === "string" && quote.currency.length > 0) {
-      return quote.currency;
+    const quoteMeta = await fetchQuoteMetadataFromYahoo(symbol);
+    if (quoteMeta.autoCurrency) {
+      return quoteMeta.autoCurrency;
     }
   } catch {
     // Ignore quote errors and use default currency below.
@@ -90,3 +140,4 @@ export async function fetchHistoricalFromYahoo(
 
   return mapped;
 }
+
