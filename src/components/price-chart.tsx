@@ -89,7 +89,7 @@ export function PriceChart({ series }: PriceChartProps) {
           const body = rows
             .map((row) => {
               const raw = row.data as { value: number | null; adjClose: number | null };
-              return `${row.marker}${row.seriesName} Close: ${formatNumber(raw.value)} | Adj Close: ${formatNumber(raw.adjClose)}`;
+              return `${row.marker}${row.seriesName} 收盘价: ${formatNumber(raw.value)} | 复权收盘价: ${formatNumber(raw.adjClose)}`;
             })
             .join("<br/>");
 
@@ -132,9 +132,8 @@ export function PriceChart({ series }: PriceChartProps) {
 
   return (
     <div className="panel">
-      <h3 className="panel-title">Historical Close Trend</h3>
+      <h3 className="panel-title">历史收盘价走势</h3>
       <ReactECharts option={option} notMerge style={{ height: 420, width: "100%" }} />
     </div>
   );
 }
-

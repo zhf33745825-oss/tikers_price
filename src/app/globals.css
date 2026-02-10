@@ -22,8 +22,10 @@
 
 html,
 body {
+  width: 100%;
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
 }
 
 body {
@@ -43,7 +45,10 @@ a {
 
 .app-shell {
   width: min(1440px, 96vw);
+  max-width: min(1440px, 96vw);
+  min-width: 0;
   margin: 24px auto 40px;
+  overflow-x: clip;
 }
 
 .app-header {
@@ -56,6 +61,7 @@ a {
   border-radius: 18px;
   border: 1px solid rgba(15, 118, 110, 0.22);
   background: linear-gradient(130deg, #ecfeff 0%, #f0f9ff 52%, #f8fafc 100%);
+  min-width: 0;
 }
 
 .app-header h1 {
@@ -72,6 +78,7 @@ a {
 .app-nav {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .app-nav a {
@@ -90,11 +97,13 @@ a {
 .app-main {
   display: grid;
   gap: 16px;
+  min-width: 0;
 }
 
 .content-section {
   display: grid;
   gap: 14px;
+  min-width: 0;
 }
 
 .panel {
@@ -103,6 +112,8 @@ a {
   border-radius: 16px;
   box-shadow: var(--shadow);
   padding: 16px;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .nested-panel {
@@ -202,6 +213,7 @@ a {
   justify-content: space-between;
   gap: 16px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .preset-group {
@@ -240,7 +252,9 @@ a {
 
 .matrix-scroll {
   margin-top: 12px;
-  overflow: auto;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
   max-height: 70vh;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
@@ -343,7 +357,7 @@ a {
 .advanced-grid {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: 1.2fr auto;
+  grid-template-columns: minmax(0, 1.2fr) auto;
   gap: 12px;
 }
 
@@ -361,7 +375,9 @@ a {
 }
 
 .table-scroll {
-  overflow: auto;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
   margin-top: 12px;
 }
 
@@ -426,4 +442,3 @@ a {
     align-items: flex-start;
   }
 }
-

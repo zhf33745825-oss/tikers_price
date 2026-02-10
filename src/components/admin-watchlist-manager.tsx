@@ -53,7 +53,7 @@ export function AdminWatchlistManager() {
       const response = await fetch("/api/admin/watchlist");
       const body = await response.json();
       if (!response.ok) {
-        setError(body.error ?? "failed to load watchlist");
+        setError(body.error ?? "加载清单失败");
         return;
       }
 
@@ -61,7 +61,7 @@ export function AdminWatchlistManager() {
       setItems(data.items);
       setLastUpdateAt(data.lastSuccessfulUpdateAt);
     } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : "network error");
+      setError(fetchError instanceof Error ? fetchError.message : "网络错误");
     } finally {
       setLoading(false);
     }
@@ -89,7 +89,7 @@ export function AdminWatchlistManager() {
       });
       const body = await response.json();
       if (!response.ok) {
-        setError(body.error ?? "failed to add symbol");
+        setError(body.error ?? "新增代码失败");
         return;
       }
 
@@ -98,7 +98,7 @@ export function AdminWatchlistManager() {
       setRegionOverride("");
       await loadWatchlist();
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "network error");
+      setError(createError instanceof Error ? createError.message : "网络错误");
     } finally {
       setSubmitting(false);
     }
@@ -112,12 +112,12 @@ export function AdminWatchlistManager() {
       });
       const body = await response.json();
       if (!response.ok) {
-        setError(body.error ?? "failed to delete");
+        setError(body.error ?? "删除失败");
         return;
       }
       await loadWatchlist();
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "network error");
+      setError(deleteError instanceof Error ? deleteError.message : "网络错误");
     }
   };
 
@@ -136,12 +136,12 @@ export function AdminWatchlistManager() {
       });
       const body = await response.json();
       if (!response.ok) {
-        setError(body.error ?? "failed to reorder");
+        setError(body.error ?? "调整顺序失败");
         return;
       }
       await loadWatchlist();
     } catch (moveError) {
-      setError(moveError instanceof Error ? moveError.message : "network error");
+      setError(moveError instanceof Error ? moveError.message : "网络错误");
     }
   };
 
@@ -163,12 +163,12 @@ export function AdminWatchlistManager() {
       });
       const body = await response.json();
       if (!response.ok) {
-        setError(body.error ?? "failed to save overrides");
+        setError(body.error ?? "保存覆盖值失败");
         return;
       }
       await loadWatchlist();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "network error");
+      setError(saveError instanceof Error ? saveError.message : "网络错误");
     } finally {
       setSavingSymbols((prev) => ({ ...prev, [target]: false }));
     }
@@ -177,36 +177,36 @@ export function AdminWatchlistManager() {
   return (
     <section className="content-section">
       <div className="panel">
-        <h2 className="panel-title">Watchlist Manager</h2>
+        <h2 className="panel-title">自选清单管理</h2>
         <p className="subtle">
-          Last successful daily update: {formatDateTime(lastUpdateAt)}
+          最近一次成功日更：{formatDateTime(lastUpdateAt)}
         </p>
 
         <div className="admin-form-grid">
           <label className="field">
-            <span>Symbol</span>
+            <span>股票代码</span>
             <input
               value={symbol}
               onChange={(event) => setSymbol(event.target.value)}
-              placeholder="e.g. TSLA or 600519.SS"
+              placeholder="例如 TSLA 或 600519.SS"
             />
           </label>
 
           <label className="field">
-            <span>Name Override (optional)</span>
+            <span>名称覆盖（可选）</span>
             <input
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
-              placeholder="e.g. Tesla"
+              placeholder="例如 特斯拉"
             />
           </label>
 
           <label className="field">
-            <span>Region Override (optional)</span>
+            <span>地区覆盖（可选）</span>
             <input
               value={regionOverride}
               onChange={(event) => setRegionOverride(event.target.value)}
-              placeholder="e.g. US"
+              placeholder="例如 美国"
             />
           </label>
 
@@ -216,7 +216,7 @@ export function AdminWatchlistManager() {
             onClick={handleCreate}
             disabled={submitting}
           >
-            {submitting ? "Submitting..." : "Add Symbol"}
+            {submitting ? "提交中..." : "添加代码"}
           </button>
         </div>
 
@@ -224,12 +224,12 @@ export function AdminWatchlistManager() {
       </div>
 
       <div className="panel">
-        <h3 className="panel-title">Current Watchlist</h3>
+        <h3 className="panel-title">当前清单</h3>
 
-        {loading ? <p className="subtle">Loading...</p> : null}
+        {loading ? <p className="subtle">加载中...</p> : null}
 
         {!loading && items.length === 0 ? (
-          <p className="subtle">Watchlist is empty</p>
+          <p className="subtle">清单为空</p>
         ) : null}
 
         {!loading && items.length > 0 ? (
@@ -237,15 +237,15 @@ export function AdminWatchlistManager() {
             <table className="data-table admin-table">
               <thead>
                 <tr>
-                  <th>Order</th>
-                  <th>Symbol</th>
-                  <th>Resolved Name</th>
-                  <th>Resolved Region</th>
-                  <th>Name Override</th>
-                  <th>Region Override</th>
-                  <th>Auto Currency</th>
-                  <th>Meta Updated At</th>
-                  <th>Actions</th>
+                  <th>排序</th>
+                  <th>股票代码</th>
+                  <th>生效名称</th>
+                  <th>生效地区</th>
+                  <th>名称覆盖</th>
+                  <th>地区覆盖</th>
+                  <th>自动币种</th>
+                  <th>元信息更新时间</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -290,14 +290,14 @@ export function AdminWatchlistManager() {
                           className="secondary-button"
                           onClick={() => void handleMove(item.symbol, "up")}
                         >
-                          Up
+                          上移
                         </button>
                         <button
                           type="button"
                           className="secondary-button"
                           onClick={() => void handleMove(item.symbol, "down")}
                         >
-                          Down
+                          下移
                         </button>
                         <button
                           type="button"
@@ -305,14 +305,14 @@ export function AdminWatchlistManager() {
                           onClick={() => void handleSaveOverrides(item.symbol)}
                           disabled={Boolean(savingSymbols[item.symbol])}
                         >
-                          {savingSymbols[item.symbol] ? "Saving..." : "Save"}
+                          {savingSymbols[item.symbol] ? "保存中..." : "保存"}
                         </button>
                         <button
                           type="button"
                           className="danger-button"
                           onClick={() => void handleDelete(item.symbol)}
                         >
-                          Delete
+                          删除
                         </button>
                       </div>
                     </td>
@@ -326,4 +326,3 @@ export function AdminWatchlistManager() {
     </section>
   );
 }
-

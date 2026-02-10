@@ -60,7 +60,7 @@ export function StockQueryApp() {
       searchParams.set("preset", params.preset);
       if (params.preset === "custom") {
         if (!params.from || !params.to) {
-          setMatrixError("from/to is required for custom preset");
+          setMatrixError("自定义区间必须填写开始和结束日期");
           return;
         }
         searchParams.set("from", params.from);
@@ -74,7 +74,7 @@ export function StockQueryApp() {
       const body = await responseRaw.json();
 
       if (!responseRaw.ok) {
-        setMatrixError(body.error ?? "failed to load matrix data");
+        setMatrixError(body.error ?? "加载矩阵数据失败");
         return;
       }
 
@@ -85,7 +85,7 @@ export function StockQueryApp() {
         matrixScrollRef.current.scrollLeft = 0;
       }
     } catch (error) {
-      setMatrixError(error instanceof Error ? error.message : "network error");
+      setMatrixError(error instanceof Error ? error.message : "网络错误");
     } finally {
       setMatrixLoading(false);
     }
@@ -136,14 +136,14 @@ export function StockQueryApp() {
       const responseRaw = await fetch(`/api/prices?${params.toString()}`);
       const body = await responseRaw.json();
       if (!responseRaw.ok) {
-        setChartError(body.error ?? "failed to load chart data");
+        setChartError(body.error ?? "加载图表数据失败");
         return;
       }
 
       setChartResponse(body as PriceQueryResponse);
       setChartSymbolFilter("ALL");
     } catch (error) {
-      setChartError(error instanceof Error ? error.message : "network error");
+      setChartError(error instanceof Error ? error.message : "网络错误");
     } finally {
       setChartLoading(false);
     }
@@ -255,9 +255,9 @@ export function StockQueryApp() {
       <div className="panel">
         <div className="matrix-toolbar">
           <div>
-            <h2 className="panel-title">Stock Close Matrix</h2>
+            <h2 className="panel-title">股票收盘价矩阵</h2>
             <p className="subtle">
-              Mode: {matrixMode === "watchlist" ? "Watchlist" : "Adhoc"} | Missing values are shown as N/A
+              模式：{matrixMode === "watchlist" ? "自选清单" : "临时查询"} | 缺失值显示为 N/A
             </p>
           </div>
 
@@ -268,7 +268,7 @@ export function StockQueryApp() {
               onClick={() => void loadWatchlistPreset("7")}
               disabled={matrixLoading}
             >
-              7D
+              7天
             </button>
             <button
               type="button"
@@ -276,7 +276,7 @@ export function StockQueryApp() {
               onClick={() => void loadWatchlistPreset("30")}
               disabled={matrixLoading}
             >
-              30D
+              30天
             </button>
             <button
               type="button"
@@ -284,7 +284,7 @@ export function StockQueryApp() {
               onClick={() => void loadWatchlistPreset("90")}
               disabled={matrixLoading}
             >
-              90D
+              90天
             </button>
             <button
               type="button"
@@ -292,7 +292,7 @@ export function StockQueryApp() {
               onClick={() => setPreset("custom")}
               disabled={matrixLoading}
             >
-              Custom
+              自定义
             </button>
           </div>
         </div>
@@ -300,7 +300,7 @@ export function StockQueryApp() {
         {preset === "custom" ? (
           <div className="custom-range-row">
             <label className="field compact">
-              <span>From</span>
+              <span>开始日期</span>
               <input
                 type="date"
                 value={customFrom}
@@ -309,7 +309,7 @@ export function StockQueryApp() {
             </label>
 
             <label className="field compact">
-              <span>To</span>
+              <span>结束日期</span>
               <input
                 type="date"
                 value={customTo}
@@ -323,7 +323,7 @@ export function StockQueryApp() {
               onClick={() => void applyWatchlistCustomRange()}
               disabled={matrixLoading}
             >
-              {matrixLoading ? "Loading..." : "Apply Range"}
+              {matrixLoading ? "加载中..." : "应用区间"}
             </button>
           </div>
         ) : null}
@@ -346,10 +346,10 @@ export function StockQueryApp() {
           <table className="matrix-table">
             <thead>
               <tr>
-                <th className="sticky-col sticky-col-1">Code</th>
-                <th className="sticky-col sticky-col-2">Name</th>
-                <th className="sticky-col sticky-col-3">Region</th>
-                <th className="sticky-col sticky-col-4">Ccy</th>
+                <th className="sticky-col sticky-col-1">股票代码</th>
+                <th className="sticky-col sticky-col-2">名称</th>
+                <th className="sticky-col sticky-col-3">地区</th>
+                <th className="sticky-col sticky-col-4">币种</th>
 
                 {virtualWindow.leadingWidth > 0 ? (
                   <th
@@ -407,11 +407,11 @@ export function StockQueryApp() {
       </div>
 
       <details className="panel advanced-panel">
-        <summary className="advanced-summary">Advanced Query and Chart</summary>
+        <summary className="advanced-summary">高级查询与图表</summary>
 
         <div className="advanced-grid">
           <label className="field">
-            <span>Symbols (comma / space / newline separated)</span>
+            <span>股票代码（逗号 / 空格 / 换行分隔）</span>
             <textarea
               value={adhocSymbols}
               onChange={(event) => setAdhocSymbols(event.target.value)}
@@ -426,7 +426,7 @@ export function StockQueryApp() {
               onClick={() => void applyAdhocMatrix()}
               disabled={matrixLoading}
             >
-              {matrixLoading ? "Applying..." : "Apply to Matrix"}
+              {matrixLoading ? "应用中..." : "应用到矩阵"}
             </button>
 
             <button
@@ -435,7 +435,7 @@ export function StockQueryApp() {
               onClick={() => void loadChartData()}
               disabled={chartLoading}
             >
-              {chartLoading ? "Loading..." : "Load Chart Data"}
+              {chartLoading ? "加载中..." : "加载图表数据"}
             </button>
           </div>
         </div>
@@ -456,14 +456,14 @@ export function StockQueryApp() {
 
             <div className="panel nested-panel">
               <div className="table-header">
-                <h3 className="panel-title">Historical Price Table</h3>
+                <h3 className="panel-title">历史价格表</h3>
                 <label className="field compact">
-                  <span>Filter Symbol</span>
+                  <span>按代码筛选</span>
                   <select
                     value={chartSymbolFilter}
                     onChange={(event) => setChartSymbolFilter(event.target.value)}
                   >
-                    <option value="ALL">ALL</option>
+                    <option value="ALL">全部</option>
                     {chartSymbols.map((symbol) => (
                       <option key={symbol} value={symbol}>
                         {symbol}
@@ -477,11 +477,11 @@ export function StockQueryApp() {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Symbol</th>
-                      <th>Close</th>
-                      <th>Adj Close</th>
-                      <th>Currency</th>
+                      <th>日期</th>
+                      <th>代码</th>
+                      <th>收盘价</th>
+                      <th>复权收盘价</th>
+                      <th>币种</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -504,4 +504,3 @@ export function StockQueryApp() {
     </section>
   );
 }
-

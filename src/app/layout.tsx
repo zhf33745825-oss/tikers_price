@@ -17,8 +17,8 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Stock Close Matrix",
-  description: "Yahoo Finance powered stock close matrix with watchlist and daily updates",
+  title: "股票历史收盘价矩阵",
+  description: "基于 Yahoo Finance 的股票历史收盘价矩阵，支持自选清单与每日自动更新",
 };
 
 export default function RootLayout({
@@ -32,12 +32,12 @@ export default function RootLayout({
         <div className="app-shell">
           <header className="app-header">
             <div>
-              <h1>Stock Close Matrix</h1>
-              <p>Yahoo Finance data source | Multi-symbol history | Daily auto-update</p>
+              <h1>股票历史收盘价矩阵</h1>
+              <p>Yahoo Finance 数据源 | 多股票历史收盘价 | 每日自动更新</p>
             </div>
             <nav className="app-nav">
-              <Link href="/">Home Matrix</Link>
-              <Link href="/admin/watchlist">Watchlist Admin</Link>
+              <Link href="/">首页矩阵</Link>
+              <Link href="/admin/watchlist">自选清单管理</Link>
             </nav>
           </header>
 
@@ -47,4 +47,3 @@ export default function RootLayout({
     </html>
   );
 }
-
