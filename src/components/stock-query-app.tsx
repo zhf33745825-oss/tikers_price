@@ -1,14 +1,23 @@
 "use client";
 
 import dayjs from "dayjs";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { PriceChart } from "@/components/price-chart";
+import {
+  hasAutoRefreshTimedOut,
+  scheduleAutoRefreshTick,
+  shouldContinueAutoRefresh,
+} from "@/lib/stock/auto-refresh";
 import type { MatrixMode, MatrixPreset, MatrixPriceResponse, PriceQueryResponse } from "@/types/stock";
 
 const DATE_COL_WIDTH = 96;
 const VIRTUAL_BUFFER_COLS = 8;
 const DEFAULT_ADHOC_SYMBOLS = "TLX.AX, WTC.AX, XRO.AX, NXT.AX";
+const AUTO_REFRESH_INTERVAL_MS = 2500;
+const AUTO_REFRESH_MAX_ATTEMPTS = 8;
+
+type MatrixLoadSource = "user" | "auto";
 
 interface ChartTableRow {
   date: string;
@@ -16,6 +25,14 @@ interface ChartTableRow {
   close: number;
   adjClose: number;
   currency: string;
+}
+
+interface MatrixLoadParams {
+  mode: MatrixMode;
+  preset: MatrixPreset;
+  from?: string;
+  to?: string;
+  symbols?: string;
 }
 
 function formatNumber(value: number | null | undefined): string {
@@ -40,6 +57,25 @@ function sanitizeWarningText(message: string): string {
   return `${fallback.slice(0, 217)}...`;
 }
 
+export function getPendingSymbolsFromMatrix(response: MatrixPriceResponse | null): string[] {
+  if (!response || response.mode !== "watchlist") {
+    return [];
+  }
+
+  return response.rows
+    .filter((row) => {
+      if (row.latestClose !== null) {
+        return false;
+      }
+      const values = Object.values(row.pricesByDate);
+      if (values.length === 0) {
+        return true;
+      }
+      return values.every((value) => value === null);
+    })
+    .map((row) => row.symbol);
+}
+
 export function StockQueryApp() {
   const [preset, setPreset] = useState<MatrixPreset>("30");
   const [customFrom, setCustomFrom] = useState(dayjs().subtract(1, "year").format("YYYY-MM-DD"));
@@ -56,18 +92,27 @@ export function StockQueryApp() {
   const [chartSymbolFilter, setChartSymbolFilter] = useState("ALL");
 
   const matrixScrollRef = useRef<HTMLDivElement>(null);
+  const lastMatrixParamsRef = useRef<MatrixLoadParams | null>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [viewportWidth, setViewportWidth] = useState(1200);
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
+  const [autoRefreshAttempts, setAutoRefreshAttempts] = useState(0);
+  const [pendingSymbols, setPendingSymbols] = useState<string[]>([]);
+  const [autoRefreshTimedOut, setAutoRefreshTimedOut] = useState(false);
 
-  const loadMatrix = async (params: {
-    mode: MatrixMode;
-    preset: MatrixPreset;
-    from?: string;
-    to?: string;
-    symbols?: string;
-  }) => {
-    setMatrixLoading(true);
-    setMatrixError(null);
+  const loadMatrix = useCallback(async (
+    params: MatrixLoadParams,
+    source: MatrixLoadSource = "user",
+  ) => {
+    lastMatrixParamsRef.current = params;
+
+    if (source === "user") {
+      setMatrixLoading(true);
+      setMatrixError(null);
+      setAutoRefreshing(false);
+      setAutoRefreshAttempts(0);
+      setAutoRefreshTimedOut(false);
+    }
 
     try {
       const searchParams = new URLSearchParams();
@@ -75,7 +120,9 @@ export function StockQueryApp() {
       searchParams.set("preset", params.preset);
       if (params.preset === "custom") {
         if (!params.from || !params.to) {
-          setMatrixError("自定义区间必须填写开始和结束日期");
+          if (source === "user") {
+            setMatrixError("自定义区间必须填写开始和结束日期");
+          }
           return;
         }
         searchParams.set("from", params.from);
@@ -89,22 +136,60 @@ export function StockQueryApp() {
       const body = await responseRaw.json();
 
       if (!responseRaw.ok) {
-        setMatrixError(body.error ?? "加载矩阵数据失败");
+        if (source === "user") {
+          setMatrixError(body.error ?? "加载矩阵数据失败");
+        }
         return;
       }
 
-      setMatrixMode(params.mode);
-      setMatrixResponse(body as MatrixPriceResponse);
-      setScrollLeft(0);
-      if (matrixScrollRef.current) {
-        matrixScrollRef.current.scrollLeft = 0;
+      const nextResponse = body as MatrixPriceResponse;
+      const nextPendingSymbols = getPendingSymbolsFromMatrix(nextResponse);
+
+      setMatrixMode(nextResponse.mode);
+      setMatrixResponse(nextResponse);
+      setPendingSymbols(nextPendingSymbols);
+
+      if (nextResponse.mode !== "watchlist") {
+        setAutoRefreshing(false);
+      } else if (nextPendingSymbols.length > 0) {
+        setAutoRefreshing(true);
+      } else {
+        setAutoRefreshing(false);
+        setAutoRefreshTimedOut(false);
+      }
+
+      if (source === "user") {
+        setAutoRefreshAttempts(0);
+        setAutoRefreshTimedOut(false);
+        setScrollLeft(0);
+        if (matrixScrollRef.current) {
+          matrixScrollRef.current.scrollLeft = 0;
+        }
       }
     } catch (error) {
-      setMatrixError(error instanceof Error ? error.message : "网络错误");
+      if (source === "user") {
+        setMatrixError(error instanceof Error ? error.message : "网络错误");
+      }
     } finally {
-      setMatrixLoading(false);
+      if (source === "user") {
+        setMatrixLoading(false);
+      }
     }
-  };
+  }, []);
+
+  const buildCurrentMatrixParams = useCallback((): MatrixLoadParams => {
+    if (lastMatrixParamsRef.current) {
+      return { ...lastMatrixParamsRef.current };
+    }
+
+    return {
+      mode: matrixMode,
+      preset,
+      from: preset === "custom" ? customFrom : undefined,
+      to: preset === "custom" ? customTo : undefined,
+      symbols: matrixMode === "adhoc" ? adhocSymbols : undefined,
+    };
+  }, [adhocSymbols, customFrom, customTo, matrixMode, preset]);
 
   const loadWatchlistPreset = async (targetPreset: MatrixPreset) => {
     if (targetPreset === "custom") {
@@ -138,6 +223,10 @@ export function StockQueryApp() {
     });
   };
 
+  const refreshMatrix = async () => {
+    await loadMatrix(buildCurrentMatrixParams(), "user");
+  };
+
   const loadChartData = async () => {
     setChartLoading(true);
     setChartError(null);
@@ -169,7 +258,45 @@ export function StockQueryApp() {
       mode: "watchlist",
       preset: "30",
     });
-  }, []);
+  }, [loadMatrix]);
+
+  useEffect(() => {
+    if (matrixMode !== "watchlist") {
+      return;
+    }
+
+    const autoRefreshState = {
+      autoRefreshing,
+      pendingCount: pendingSymbols.length,
+      attempts: autoRefreshAttempts,
+      maxAttempts: AUTO_REFRESH_MAX_ATTEMPTS,
+    };
+
+    if (hasAutoRefreshTimedOut(autoRefreshState)) {
+      setAutoRefreshing(false);
+      setAutoRefreshTimedOut(true);
+      return;
+    }
+
+    if (!shouldContinueAutoRefresh(autoRefreshState)) {
+      return;
+    }
+
+    const cancel = scheduleAutoRefreshTick(() => {
+      const params = buildCurrentMatrixParams();
+      setAutoRefreshAttempts((previous) => previous + 1);
+      void loadMatrix(params, "auto");
+    }, AUTO_REFRESH_INTERVAL_MS);
+
+    return cancel;
+  }, [
+    autoRefreshAttempts,
+    autoRefreshing,
+    buildCurrentMatrixParams,
+    loadMatrix,
+    matrixMode,
+    pendingSymbols.length,
+  ]);
 
   useEffect(() => {
     const updateViewportWidth = () => {
@@ -309,6 +436,14 @@ export function StockQueryApp() {
             >
               自定义
             </button>
+            <button
+              type="button"
+              className="preset-button"
+              onClick={() => void refreshMatrix()}
+              disabled={matrixLoading}
+            >
+              刷新
+            </button>
           </div>
         </div>
 
@@ -344,6 +479,18 @@ export function StockQueryApp() {
         ) : null}
 
         {matrixError ? <p className="error-text">{matrixError}</p> : null}
+
+        {autoRefreshing && pendingSymbols.length > 0 ? (
+          <p className="subtle">
+            正在抓取 {pendingSymbols.length} 个代码的数据，完成后将自动刷新...
+          </p>
+        ) : null}
+
+        {autoRefreshTimedOut && pendingSymbols.length > 0 ? (
+          <p className="subtle">
+            部分代码仍无数据，请点击“刷新”重试或稍后再试。
+          </p>
+        ) : null}
 
         {matrixResponse?.warnings?.length ? (
           <div className="inline-warning">
