@@ -27,8 +27,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
-      <body className={`${notoSans.variable} ${ibmPlexMono.variable}`}>
+    <html lang="zh-CN" suppressHydrationWarning>
+      <body suppressHydrationWarning className={`${notoSans.variable} ${ibmPlexMono.variable}`}>
         <div className="app-shell">
           <header className="app-header">
             <div>

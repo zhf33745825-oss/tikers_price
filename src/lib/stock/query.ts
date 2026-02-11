@@ -1,5 +1,6 @@
-import { fetchHistoricalFromYahoo } from "@/lib/stock/yahoo";
-import { getPriceSeries, upsertDailyPrices } from "@/lib/stock/repository";
+import { hydrateHistoricalCacheForSymbols } from "@/lib/stock/cache-hydration";
+import { getPriceSeries } from "@/lib/stock/repository";
+import { filterHydrationWarningsByAvailableSymbols } from "@/lib/stock/warnings";
 import type { DateRange } from "@/lib/stock/dates";
 import type { PriceQueryResponse } from "@/types/stock";
 
@@ -13,22 +14,12 @@ export async function queryHistoricalSeries(
 ): Promise<PriceQueryResponse> {
   const warnings: string[] = [];
 
-  for (const symbol of input.symbols) {
-    try {
-      const fetchedPoints = await fetchHistoricalFromYahoo(
-        symbol,
-        input.range.fromDate,
-        input.range.toDate,
-      );
-
-      if (fetchedPoints.length > 0) {
-        await upsertDailyPrices(symbol, fetchedPoints);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "fetch failed";
-      warnings.push(`${symbol}: Yahoo fetch failed (${message})`);
-    }
-  }
+  await hydrateHistoricalCacheForSymbols({
+    symbols: input.symbols,
+    fromDate: input.range.fromDate,
+    toDate: input.range.toDate,
+    warnings,
+  });
 
   const series = await getPriceSeries(
     input.symbols,
@@ -36,10 +27,14 @@ export async function queryHistoricalSeries(
     input.range.toDate,
   );
   const availableSymbols = new Set(series.map((item) => item.symbol));
+  const filteredWarnings = filterHydrationWarningsByAvailableSymbols(
+    warnings,
+    new Set(Array.from(availableSymbols, (symbol) => symbol.toUpperCase())),
+  );
 
   for (const symbol of input.symbols) {
     if (!availableSymbols.has(symbol)) {
-      warnings.push(`${symbol}: no data found in selected range`);
+      filteredWarnings.push(`${symbol}: no data found in selected range`);
     }
   }
 
@@ -49,7 +44,6 @@ export async function queryHistoricalSeries(
       to: input.range.to,
     },
     series,
-    warnings: Array.from(new Set(warnings)),
+    warnings: Array.from(new Set(filteredWarnings)),
   };
 }
-

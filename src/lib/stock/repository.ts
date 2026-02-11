@@ -34,6 +34,11 @@ export interface LatestPriceSnapshot {
   currency: string;
 }
 
+export interface TradeDateBounds {
+  minTradeDate: Date;
+  maxTradeDate: Date;
+}
+
 function resolveName(record: WatchSymbolRecord): string {
   const value = record.displayName ?? record.autoName;
   if (value && value.trim().length > 0) {
@@ -297,6 +302,38 @@ export async function getLastTradeDateForSymbol(symbol: string): Promise<Date | 
   return row?.tradeDate ?? null;
 }
 
+export async function getTradeDateBoundsBySymbols(
+  symbols: string[],
+): Promise<Map<string, TradeDateBounds>> {
+  if (symbols.length === 0) {
+    return new Map();
+  }
+
+  const rows = await prisma.dailyPrice.groupBy({
+    by: ["symbol"],
+    where: {
+      symbol: { in: symbols },
+    },
+    _min: {
+      tradeDate: true,
+    },
+    _max: {
+      tradeDate: true,
+    },
+  });
+
+  const entries = rows.flatMap((row) => {
+    const minTradeDate = row._min.tradeDate;
+    const maxTradeDate = row._max.tradeDate;
+    if (!minTradeDate || !maxTradeDate) {
+      return [];
+    }
+    return [[row.symbol, { minTradeDate, maxTradeDate }] as const];
+  });
+
+  return new Map(entries);
+}
+
 export async function upsertDailyPrices(
   symbol: string,
   points: Array<{
@@ -465,4 +502,3 @@ export async function getLastSuccessfulUpdateAt(): Promise<string | null> {
 
   return row?.endedAt.toISOString() ?? null;
 }
-

@@ -3,6 +3,7 @@ import timezone from "dayjs/plugin/timezone";
 import utc from "dayjs/plugin/utc";
 
 import { appEnv } from "@/lib/env";
+import { hydrateHistoricalCacheForSymbols } from "@/lib/stock/cache-hydration";
 import { ensureDefaultWatchlist } from "@/lib/stock/bootstrap";
 import { MATRIX_PRESET_DAYS, META_REFRESH_DAYS, SHANGHAI_TIME_ZONE } from "@/lib/stock/constants";
 import { buildDateRange, parseDateKeyToDate, toDateKey } from "@/lib/stock/dates";
@@ -14,11 +15,11 @@ import {
   getWatchSymbolRecordsBySymbols,
   listWatchSymbolRecords,
   updateWatchSymbolAutoMeta,
-  upsertDailyPrices,
   type WatchSymbolRecord,
 } from "@/lib/stock/repository";
 import { parseSymbolsInput } from "@/lib/stock/symbols";
-import { fetchHistoricalFromYahoo, fetchQuoteMetadataFromYahoo } from "@/lib/stock/yahoo";
+import { filterHydrationWarningsByAvailableSymbols } from "@/lib/stock/warnings";
+import { fetchQuoteMetadataFromYahoo } from "@/lib/stock/yahoo";
 import type { MatrixMode, MatrixPreset, MatrixPriceResponse } from "@/types/stock";
 
 dayjs.extend(utc);
@@ -121,26 +122,6 @@ function buildRangeSelection(
     fallbackFrom: pullFrom.format("YYYY-MM-DD"),
     fallbackTo: today.format("YYYY-MM-DD"),
   };
-}
-
-async function loadAndStoreHistoricalData(
-  symbols: string[],
-  fromDate: Date,
-  toDate: Date,
-  warnings: string[],
-): Promise<void> {
-  for (const symbol of symbols) {
-    try {
-      const points = await fetchHistoricalFromYahoo(symbol, fromDate, toDate);
-      if (points.length > 0) {
-        await upsertDailyPrices(symbol, points);
-      }
-    } catch (error) {
-      warnings.push(
-        `${symbol}: failed to fetch historical data (${error instanceof Error ? error.message : "unknown error"})`,
-      );
-    }
-  }
 }
 
 async function resolveWatchlistMeta(
@@ -292,12 +273,12 @@ export async function getMatrixPriceData(
     };
   }
 
-  await loadAndStoreHistoricalData(
+  await hydrateHistoricalCacheForSymbols({
     symbols,
-    rangeSelection.pullFromDate,
-    rangeSelection.pullToDate,
+    fromDate: rangeSelection.pullFromDate,
+    toDate: rangeSelection.pullToDate,
     warnings,
-  );
+  });
 
   const [priceRows, latestSnapshots, metaMap] = await Promise.all([
     getDailyPriceRows(symbols, rangeSelection.pullFromDate, rangeSelection.pullToDate),
@@ -357,6 +338,12 @@ export async function getMatrixPriceData(
 
   const from = selectedDateKeys[0] ?? rangeSelection.fallbackFrom;
   const to = selectedDateKeys[selectedDateKeys.length - 1] ?? rangeSelection.fallbackTo;
+  const availableSymbols = new Set(
+    rows
+      .filter((row) => selectedDateKeys.some((dateKey) => row.pricesByDate[dateKey] !== null))
+      .map((row) => row.symbol.toUpperCase()),
+  );
+  const filteredWarnings = filterHydrationWarningsByAvailableSymbols(warnings, availableSymbols);
 
   return {
     mode,
@@ -369,7 +356,6 @@ export async function getMatrixPriceData(
     displayDates: selectedDateKeys.map((dateKey) =>
       dayjs(parseDateKeyToDate(dateKey)).tz(SHANGHAI_TIME_ZONE).format("YY.MM.DD")),
     rows,
-    warnings: Array.from(new Set(warnings)),
+    warnings: Array.from(new Set(filteredWarnings)),
   };
 }
-

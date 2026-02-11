@@ -25,6 +25,21 @@ function formatNumber(value: number | null | undefined): string {
   return value.toFixed(2);
 }
 
+function sanitizeWarningText(message: string): string {
+  const compact = message
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const fallback = compact.length > 0 ? compact : "upstream warning";
+  if (fallback.length <= 220) {
+    return fallback;
+  }
+  return `${fallback.slice(0, 217)}...`;
+}
+
 export function StockQueryApp() {
   const [preset, setPreset] = useState<MatrixPreset>("30");
   const [customFrom, setCustomFrom] = useState(dayjs().subtract(1, "year").format("YYYY-MM-DD"));
@@ -332,8 +347,8 @@ export function StockQueryApp() {
 
         {matrixResponse?.warnings?.length ? (
           <div className="inline-warning">
-            {matrixResponse.warnings.map((warning) => (
-              <div key={warning}>{warning}</div>
+            {matrixResponse.warnings.map((warning, index) => (
+              <div key={`${index}-${warning}`}>{sanitizeWarningText(warning)}</div>
             ))}
           </div>
         ) : null}
@@ -444,8 +459,8 @@ export function StockQueryApp() {
 
         {chartResponse?.warnings?.length ? (
           <div className="inline-warning">
-            {chartResponse.warnings.map((warning) => (
-              <div key={warning}>{warning}</div>
+            {chartResponse.warnings.map((warning, index) => (
+              <div key={`${index}-${warning}`}>{sanitizeWarningText(warning)}</div>
             ))}
           </div>
         ) : null}

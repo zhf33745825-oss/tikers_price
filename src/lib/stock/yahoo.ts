@@ -1,6 +1,7 @@
 import YahooFinance from "yahoo-finance2";
 
 import { parseDateKeyToDate, toDateKey } from "@/lib/stock/dates";
+import { normalizeYahooErrorMessage } from "@/lib/stock/errors";
 import { inferRegionFromExchange, inferRegionFromSymbol } from "@/lib/stock/region";
 
 interface YahooHistoricalRow {
@@ -24,6 +25,10 @@ interface YahooQuoteRow {
 const yahooFinance = new YahooFinance({
   suppressNotices: ["yahooSurvey", "ripHistorical"],
 });
+
+function throwYahooError(error: unknown): never {
+  throw new Error(normalizeYahooErrorMessage(error));
+}
 
 export interface FetchedHistoricalPoint {
   tradeDate: Date;
@@ -60,7 +65,12 @@ function resolveRegionFromQuote(symbol: string, quote: YahooQuoteRow): string {
 }
 
 export async function fetchQuoteMetadataFromYahoo(symbol: string): Promise<QuoteMetadata> {
-  const quote = (await yahooFinance.quote(symbol)) as YahooQuoteRow;
+  let quote: YahooQuoteRow;
+  try {
+    quote = (await yahooFinance.quote(symbol)) as YahooQuoteRow;
+  } catch (error) {
+    throwYahooError(error);
+  }
 
   return {
     autoName: resolveNameFromQuote(quote),
@@ -96,11 +106,16 @@ export async function fetchHistoricalFromYahoo(
   fromDate: Date,
   toDate: Date,
 ): Promise<FetchedHistoricalPoint[]> {
-  const rows = (await yahooFinance.historical(symbol, {
-    period1: fromDate,
-    period2: toDate,
-    interval: "1d",
-  })) as YahooHistoricalRow[];
+  let rows: YahooHistoricalRow[];
+  try {
+    rows = (await yahooFinance.historical(symbol, {
+      period1: fromDate,
+      period2: toDate,
+      interval: "1d",
+    })) as YahooHistoricalRow[];
+  } catch (error) {
+    throwYahooError(error);
+  }
 
   if (!Array.isArray(rows) || rows.length === 0) {
     return [];
@@ -140,4 +155,3 @@ export async function fetchHistoricalFromYahoo(
 
   return mapped;
 }
-
