@@ -1,6 +1,5 @@
-import { hydrateHistoricalCacheForSymbols } from "@/lib/stock/cache-hydration";
+import { scheduleAsyncTailRefreshForSymbols } from "@/lib/stock/cache-hydration";
 import { getPriceSeries } from "@/lib/stock/repository";
-import { filterHydrationWarningsByAvailableSymbols } from "@/lib/stock/warnings";
 import type { DateRange } from "@/lib/stock/dates";
 import type { PriceQueryResponse } from "@/types/stock";
 
@@ -14,27 +13,31 @@ export async function queryHistoricalSeries(
 ): Promise<PriceQueryResponse> {
   const warnings: string[] = [];
 
-  await hydrateHistoricalCacheForSymbols({
-    symbols: input.symbols,
-    fromDate: input.range.fromDate,
-    toDate: input.range.toDate,
-    warnings,
-  });
-
   const series = await getPriceSeries(
     input.symbols,
     input.range.fromDate,
     input.range.toDate,
   );
+
+  if (process.env.NODE_ENV === "development") {
+    const pointCount = series.reduce((sum, item) => sum + item.points.length, 0);
+    console.info(
+      `[db-hit] source=query symbols=${input.symbols.length} series=${series.length} points=${pointCount}`,
+    );
+  }
+
+  scheduleAsyncTailRefreshForSymbols({
+    source: "query",
+    symbols: input.symbols,
+    fromDate: input.range.fromDate,
+    toDate: input.range.toDate,
+  });
+
   const availableSymbols = new Set(series.map((item) => item.symbol));
-  const filteredWarnings = filterHydrationWarningsByAvailableSymbols(
-    warnings,
-    new Set(Array.from(availableSymbols, (symbol) => symbol.toUpperCase())),
-  );
 
   for (const symbol of input.symbols) {
     if (!availableSymbols.has(symbol)) {
-      filteredWarnings.push(`${symbol}: no data found in selected range`);
+      warnings.push(`${symbol}: no data found in selected range`);
     }
   }
 
@@ -44,6 +47,6 @@ export async function queryHistoricalSeries(
       to: input.range.to,
     },
     series,
-    warnings: Array.from(new Set(filteredWarnings)),
+    warnings: Array.from(new Set(warnings)),
   };
 }

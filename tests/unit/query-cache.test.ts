@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const hydrateHistoricalCacheForSymbolsMock = vi.hoisted(() => vi.fn());
+const scheduleAsyncTailRefreshForSymbolsMock = vi.hoisted(() => vi.fn());
 const getPriceSeriesMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/stock/cache-hydration", () => ({
-  hydrateHistoricalCacheForSymbols: hydrateHistoricalCacheForSymbolsMock,
+  scheduleAsyncTailRefreshForSymbols: scheduleAsyncTailRefreshForSymbolsMock,
 }));
 
 vi.mock("@/lib/stock/repository", () => ({
@@ -19,14 +19,11 @@ function date(input: string): Date {
 
 describe("queryHistoricalSeries", () => {
   beforeEach(() => {
-    hydrateHistoricalCacheForSymbolsMock.mockReset();
+    scheduleAsyncTailRefreshForSymbolsMock.mockReset();
     getPriceSeriesMock.mockReset();
   });
 
-  it("returns database data even when hydration reports warnings", async () => {
-    hydrateHistoricalCacheForSymbolsMock.mockImplementation(async ({ warnings }) => {
-      warnings.push("AAPL: failed to fetch missing historical data (Yahoo source unavailable)");
-    });
+  it("returns database data and schedules async refresh without waiting", async () => {
     getPriceSeriesMock.mockResolvedValue([
       {
         symbol: "AAPL",
@@ -45,7 +42,7 @@ describe("queryHistoricalSeries", () => {
       },
     });
 
-    expect(hydrateHistoricalCacheForSymbolsMock).toHaveBeenCalledTimes(1);
+    expect(scheduleAsyncTailRefreshForSymbolsMock).toHaveBeenCalledTimes(1);
     expect(response.series).toHaveLength(1);
     expect(response.series[0].symbol).toBe("AAPL");
     expect(response.warnings).toEqual([]);

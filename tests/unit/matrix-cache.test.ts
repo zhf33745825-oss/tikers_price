@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const ensureDefaultWatchlistMock = vi.hoisted(() => vi.fn());
-const hydrateHistoricalCacheForSymbolsMock = vi.hoisted(() => vi.fn());
+const scheduleAsyncTailRefreshForSymbolsMock = vi.hoisted(() => vi.fn());
 const getDailyPriceRowsMock = vi.hoisted(() => vi.fn());
 const getLatestPriceSnapshotsMock = vi.hoisted(() => vi.fn());
 const getWatchSymbolRecordsBySymbolsMock = vi.hoisted(() => vi.fn());
@@ -14,7 +14,7 @@ vi.mock("@/lib/stock/bootstrap", () => ({
 }));
 
 vi.mock("@/lib/stock/cache-hydration", () => ({
-  hydrateHistoricalCacheForSymbols: hydrateHistoricalCacheForSymbolsMock,
+  scheduleAsyncTailRefreshForSymbols: scheduleAsyncTailRefreshForSymbolsMock,
 }));
 
 vi.mock("@/lib/stock/repository", () => ({
@@ -34,7 +34,7 @@ import { getMatrixPriceData } from "@/lib/stock/matrix";
 describe("getMatrixPriceData cache-first flow", () => {
   beforeEach(() => {
     ensureDefaultWatchlistMock.mockReset();
-    hydrateHistoricalCacheForSymbolsMock.mockReset();
+    scheduleAsyncTailRefreshForSymbolsMock.mockReset();
     getDailyPriceRowsMock.mockReset();
     getLatestPriceSnapshotsMock.mockReset();
     getWatchSymbolRecordsBySymbolsMock.mockReset();
@@ -43,9 +43,10 @@ describe("getMatrixPriceData cache-first flow", () => {
     fetchQuoteMetadataFromYahooMock.mockReset();
   });
 
-  it("returns DB rows while keeping hydration warning in payload", async () => {
+  it("returns DB rows immediately and orders dates from newest to oldest", async () => {
     const now = new Date();
-    const tradeDate = new Date("2025-01-02T00:00:00.000Z");
+    const tradeDateOld = new Date("2025-01-02T00:00:00.000Z");
+    const tradeDateNew = new Date("2025-01-03T00:00:00.000Z");
 
     listWatchSymbolRecordsMock.mockResolvedValue([
       {
@@ -63,16 +64,19 @@ describe("getMatrixPriceData cache-first flow", () => {
       },
     ]);
 
-    hydrateHistoricalCacheForSymbolsMock.mockImplementation(async ({ warnings }) => {
-      warnings.push("AAPL: failed to fetch missing historical data (Yahoo source unavailable)");
-    });
-
     getDailyPriceRowsMock.mockResolvedValue([
       {
         symbol: "AAPL",
-        tradeDate,
+        tradeDate: tradeDateOld,
         close: 100.12,
         adjClose: 100.12,
+        currency: "USD",
+      },
+      {
+        symbol: "AAPL",
+        tradeDate: tradeDateNew,
+        close: 101.34,
+        adjClose: 101.34,
         currency: "USD",
       },
     ]);
@@ -80,8 +84,8 @@ describe("getMatrixPriceData cache-first flow", () => {
     getLatestPriceSnapshotsMock.mockResolvedValue(new Map([
       ["AAPL", {
         symbol: "AAPL",
-        tradeDate,
-        close: 100.12,
+        tradeDate: tradeDateNew,
+        close: 101.34,
         currency: "USD",
       }],
     ]));
@@ -94,9 +98,11 @@ describe("getMatrixPriceData cache-first flow", () => {
 
     expect(payload.rows).toHaveLength(1);
     expect(payload.rows[0].symbol).toBe("AAPL");
+    expect(payload.dates).toEqual(["2025-01-03", "2025-01-02"]);
+    expect(payload.rows[0].pricesByDate["2025-01-03"]).toBe(101.34);
     expect(payload.rows[0].pricesByDate["2025-01-02"]).toBe(100.12);
     expect(payload.warnings).toEqual([]);
-    expect(hydrateHistoricalCacheForSymbolsMock).toHaveBeenCalledTimes(1);
+    expect(scheduleAsyncTailRefreshForSymbolsMock).toHaveBeenCalledTimes(1);
     expect(fetchQuoteMetadataFromYahooMock).not.toHaveBeenCalled();
   });
 });

@@ -3,7 +3,7 @@ import timezone from "dayjs/plugin/timezone";
 import utc from "dayjs/plugin/utc";
 
 import { appEnv } from "@/lib/env";
-import { hydrateHistoricalCacheForSymbols } from "@/lib/stock/cache-hydration";
+import { scheduleAsyncTailRefreshForSymbols } from "@/lib/stock/cache-hydration";
 import { ensureDefaultWatchlist } from "@/lib/stock/bootstrap";
 import { MATRIX_PRESET_DAYS, META_REFRESH_DAYS, SHANGHAI_TIME_ZONE } from "@/lib/stock/constants";
 import { buildDateRange, parseDateKeyToDate, toDateKey } from "@/lib/stock/dates";
@@ -18,7 +18,6 @@ import {
   type WatchSymbolRecord,
 } from "@/lib/stock/repository";
 import { parseSymbolsInput } from "@/lib/stock/symbols";
-import { filterHydrationWarningsByAvailableSymbols } from "@/lib/stock/warnings";
 import { fetchQuoteMetadataFromYahoo } from "@/lib/stock/yahoo";
 import type { MatrixMode, MatrixPreset, MatrixPriceResponse } from "@/types/stock";
 
@@ -226,14 +225,18 @@ function selectTradeDates(
   preset: MatrixPreset,
   allDateKeys: string[],
 ): string[] {
-  if (preset === "custom") {
-    return allDateKeys;
-  }
-  const take = MATRIX_PRESET_DAYS[preset];
-  if (allDateKeys.length <= take) {
-    return allDateKeys;
-  }
-  return allDateKeys.slice(-take);
+  const ordered = (() => {
+    if (preset === "custom") {
+      return allDateKeys;
+    }
+    const take = MATRIX_PRESET_DAYS[preset];
+    if (allDateKeys.length <= take) {
+      return allDateKeys;
+    }
+    return allDateKeys.slice(-take);
+  })();
+
+  return [...ordered].reverse();
 }
 
 export async function getMatrixPriceData(
@@ -272,13 +275,6 @@ export async function getMatrixPriceData(
       warnings: ["no symbols available"],
     };
   }
-
-  await hydrateHistoricalCacheForSymbols({
-    symbols,
-    fromDate: rangeSelection.pullFromDate,
-    toDate: rangeSelection.pullToDate,
-    warnings,
-  });
 
   const [priceRows, latestSnapshots, metaMap] = await Promise.all([
     getDailyPriceRows(symbols, rangeSelection.pullFromDate, rangeSelection.pullToDate),
@@ -336,14 +332,21 @@ export async function getMatrixPriceData(
     };
   });
 
-  const from = selectedDateKeys[0] ?? rangeSelection.fallbackFrom;
-  const to = selectedDateKeys[selectedDateKeys.length - 1] ?? rangeSelection.fallbackTo;
-  const availableSymbols = new Set(
-    rows
-      .filter((row) => selectedDateKeys.some((dateKey) => row.pricesByDate[dateKey] !== null))
-      .map((row) => row.symbol.toUpperCase()),
-  );
-  const filteredWarnings = filterHydrationWarningsByAvailableSymbols(warnings, availableSymbols);
+  if (process.env.NODE_ENV === "development") {
+    console.info(
+      `[db-hit] source=matrix symbols=${symbols.length} rows=${priceRows.length}`,
+    );
+  }
+
+  scheduleAsyncTailRefreshForSymbols({
+    source: "matrix",
+    symbols,
+    fromDate: rangeSelection.pullFromDate,
+    toDate: rangeSelection.pullToDate,
+  });
+
+  const from = selectedDateKeys[selectedDateKeys.length - 1] ?? rangeSelection.fallbackFrom;
+  const to = selectedDateKeys[0] ?? rangeSelection.fallbackTo;
 
   return {
     mode,
@@ -356,6 +359,6 @@ export async function getMatrixPriceData(
     displayDates: selectedDateKeys.map((dateKey) =>
       dayjs(parseDateKeyToDate(dateKey)).tz(SHANGHAI_TIME_ZONE).format("YY.MM.DD")),
     rows,
-    warnings: Array.from(new Set(filteredWarnings)),
+    warnings: Array.from(new Set(warnings)),
   };
 }

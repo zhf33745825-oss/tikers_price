@@ -7,24 +7,29 @@ import {
 import { fetchHistoricalFromYahoo } from "@/lib/stock/yahoo";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
 
-export interface MissingRangeWindow {
+export interface TailRefreshWindow {
   fromDate: Date;
   toDate: Date;
 }
 
-interface HydrateHistoricalCacheInput {
+interface AsyncTailRefreshInput {
   symbols: string[];
   fromDate: Date;
   toDate: Date;
-  warnings: string[];
+  source: "matrix" | "query";
 }
+
+const symbolLastRefreshAt = new Map<string, number>();
+const symbolRefreshInFlight = new Map<string, Promise<void>>();
+const schedulerRuns = new Set<Promise<void>>();
 
 function shiftDays(date: Date, days: number): Date {
   return new Date(date.getTime() + (days * DAY_MS));
 }
 
-function normalizeWindowForFetch(window: MissingRangeWindow): MissingRangeWindow {
+function normalizeWindowForFetch(window: TailRefreshWindow): TailRefreshWindow {
   if (window.toDate.getTime() > window.fromDate.getTime()) {
     return window;
   }
@@ -36,78 +41,130 @@ function normalizeWindowForFetch(window: MissingRangeWindow): MissingRangeWindow
   };
 }
 
-export function buildMissingWindowsForRange(
+function shouldSkipByCooldown(symbol: string, nowMs: number): boolean {
+  const lastTriggeredAt = symbolLastRefreshAt.get(symbol);
+  if (!lastTriggeredAt) {
+    return false;
+  }
+
+  return nowMs - lastTriggeredAt < DEFAULT_REFRESH_COOLDOWN_MS;
+}
+
+function logDev(message: string): void {
+  if (process.env.NODE_ENV === "development") {
+    console.info(message);
+  }
+}
+
+function logDevError(message: string): void {
+  if (process.env.NODE_ENV === "development") {
+    console.warn(message);
+  }
+}
+
+export function buildTailRefreshWindow(
   fromDate: Date,
   toDate: Date,
   bounds: TradeDateBounds | undefined,
-): MissingRangeWindow[] {
+): TailRefreshWindow | null {
   if (fromDate.getTime() > toDate.getTime()) {
-    return [];
+    return null;
   }
 
   if (!bounds) {
-    return [{ fromDate, toDate }];
+    return normalizeWindowForFetch({ fromDate, toDate });
   }
 
-  const windows: MissingRangeWindow[] = [];
-  const requestStart = fromDate.getTime();
   const requestEnd = toDate.getTime();
-  const localMin = bounds.minTradeDate.getTime();
   const localMax = bounds.maxTradeDate.getTime();
-
-  if (requestStart < localMin) {
-    const gapEnd = shiftDays(bounds.minTradeDate, -1);
-    if (requestStart <= gapEnd.getTime()) {
-      windows.push({
-        fromDate,
-        toDate: gapEnd,
-      });
-    }
+  if (localMax >= requestEnd) {
+    return null;
   }
 
-  if (localMax < requestEnd) {
-    const gapStart = shiftDays(bounds.maxTradeDate, 1);
-    if (gapStart.getTime() <= requestEnd) {
-      windows.push({
-        fromDate: gapStart,
-        toDate,
-      });
-    }
+  const refreshStart = shiftDays(bounds.maxTradeDate, 1);
+  if (refreshStart.getTime() > requestEnd) {
+    return null;
   }
 
-  return windows;
+  return normalizeWindowForFetch({
+    fromDate: refreshStart,
+    toDate,
+  });
 }
 
-export async function hydrateHistoricalCacheForSymbols(
-  input: HydrateHistoricalCacheInput,
+async function runAsyncTailRefresh(
+  input: AsyncTailRefreshInput,
 ): Promise<void> {
   if (input.symbols.length === 0) {
     return;
   }
 
+  const nowMs = Date.now();
   const boundsBySymbol = await getTradeDateBoundsBySymbols(input.symbols);
+  const triggeredSymbols: string[] = [];
 
   for (const symbol of input.symbols) {
-    const bounds = boundsBySymbol.get(symbol);
-    const missingWindows = buildMissingWindowsForRange(input.fromDate, input.toDate, bounds);
+    if (symbolRefreshInFlight.has(symbol) || shouldSkipByCooldown(symbol, nowMs)) {
+      continue;
+    }
 
-    for (const window of missingWindows) {
-      const fetchWindow = normalizeWindowForFetch(window);
+    const refreshWindow = buildTailRefreshWindow(input.fromDate, input.toDate, boundsBySymbol.get(symbol));
+    if (!refreshWindow) {
+      continue;
+    }
+
+    symbolLastRefreshAt.set(symbol, nowMs);
+    triggeredSymbols.push(symbol);
+
+    const refreshPromise = (async () => {
       try {
         const points = await fetchHistoricalFromYahoo(
           symbol,
-          fetchWindow.fromDate,
-          fetchWindow.toDate,
+          refreshWindow.fromDate,
+          refreshWindow.toDate,
         );
         if (points.length > 0) {
           await upsertDailyPrices(symbol, points);
         }
       } catch (error) {
-        input.warnings.push(
-          `${symbol}: failed to fetch missing historical data (${toErrorMessage(error)})`,
+        logDevError(
+          `[async-refresh-error] source=${input.source} symbol=${symbol} message=${toErrorMessage(error)}`,
         );
-        break;
       }
-    }
+    })().finally(() => {
+      symbolRefreshInFlight.delete(symbol);
+    });
+
+    symbolRefreshInFlight.set(symbol, refreshPromise);
   }
+
+  logDev(
+    `[async-refresh-triggered] source=${input.source} symbols=${triggeredSymbols.join(",") || "none"}`,
+  );
+}
+
+export function scheduleAsyncTailRefreshForSymbols(
+  input: AsyncTailRefreshInput,
+): void {
+  const runPromise = runAsyncTailRefresh(input)
+    .catch((error) => {
+      logDevError(
+        `[async-refresh-error] source=${input.source} scheduler=${toErrorMessage(error)}`,
+      );
+    });
+  schedulerRuns.add(runPromise);
+  void runPromise.finally(() => {
+    schedulerRuns.delete(runPromise);
+  });
+}
+
+export async function waitForAsyncTailRefreshForTests(): Promise<void> {
+  await Promise.all(Array.from(schedulerRuns));
+  await Promise.all(Array.from(symbolRefreshInFlight.values()));
+}
+
+export function resetAsyncTailRefreshStateForTests(): void {
+  symbolLastRefreshAt.clear();
+  symbolRefreshInFlight.clear();
+  schedulerRuns.clear();
 }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getTradeDateBoundsBySymbolsMock = vi.hoisted(() => vi.fn());
 const upsertDailyPricesMock = vi.hoisted(() => vi.fn());
@@ -14,124 +14,91 @@ vi.mock("@/lib/stock/yahoo", () => ({
 }));
 
 import {
-  buildMissingWindowsForRange,
-  hydrateHistoricalCacheForSymbols,
+  buildTailRefreshWindow,
+  resetAsyncTailRefreshStateForTests,
+  scheduleAsyncTailRefreshForSymbols,
+  waitForAsyncTailRefreshForTests,
 } from "@/lib/stock/cache-hydration";
 
 function date(input: string): Date {
   return new Date(`${input}T00:00:00.000Z`);
 }
 
-describe("buildMissingWindowsForRange", () => {
-  it("returns full range when no local bounds exist", () => {
-    const windows = buildMissingWindowsForRange(
+describe("buildTailRefreshWindow", () => {
+  it("returns full range when symbol has no local data", () => {
+    const window = buildTailRefreshWindow(
       date("2025-01-01"),
       date("2025-01-10"),
       undefined,
     );
 
-    expect(windows).toHaveLength(1);
-    expect(windows[0].fromDate.toISOString()).toBe("2025-01-01T00:00:00.000Z");
-    expect(windows[0].toDate.toISOString()).toBe("2025-01-10T00:00:00.000Z");
+    expect(window?.fromDate.toISOString()).toBe("2025-01-01T00:00:00.000Z");
+    expect(window?.toDate.toISOString()).toBe("2025-01-10T00:00:00.000Z");
   });
 
-  it("returns only front missing window", () => {
-    const windows = buildMissingWindowsForRange(
+  it("returns null when local data already covers requested end date", () => {
+    const window = buildTailRefreshWindow(
       date("2025-01-01"),
       date("2025-01-10"),
       {
-        minTradeDate: date("2025-01-05"),
+        minTradeDate: date("2024-01-01"),
         maxTradeDate: date("2025-01-10"),
       },
     );
 
-    expect(windows).toHaveLength(1);
-    expect(windows[0].fromDate.toISOString()).toBe("2025-01-01T00:00:00.000Z");
-    expect(windows[0].toDate.toISOString()).toBe("2025-01-04T00:00:00.000Z");
+    expect(window).toBeNull();
   });
 
-  it("returns only tail missing window", () => {
-    const windows = buildMissingWindowsForRange(
+  it("returns only tail refresh window", () => {
+    const window = buildTailRefreshWindow(
       date("2025-01-01"),
       date("2025-01-10"),
       {
-        minTradeDate: date("2025-01-01"),
+        minTradeDate: date("2024-01-01"),
         maxTradeDate: date("2025-01-06"),
       },
     );
 
-    expect(windows).toHaveLength(1);
-    expect(windows[0].fromDate.toISOString()).toBe("2025-01-07T00:00:00.000Z");
-    expect(windows[0].toDate.toISOString()).toBe("2025-01-10T00:00:00.000Z");
+    expect(window?.fromDate.toISOString()).toBe("2025-01-07T00:00:00.000Z");
+    expect(window?.toDate.toISOString()).toBe("2025-01-10T00:00:00.000Z");
   });
 
-  it("returns front and tail windows when local data is in the middle", () => {
-    const windows = buildMissingWindowsForRange(
+  it("expands one-day refresh window to avoid identical period1/period2", () => {
+    const window = buildTailRefreshWindow(
       date("2025-01-01"),
       date("2025-01-10"),
       {
-        minTradeDate: date("2025-01-04"),
-        maxTradeDate: date("2025-01-07"),
+        minTradeDate: date("2024-01-01"),
+        maxTradeDate: date("2025-01-09"),
       },
     );
 
-    expect(windows).toHaveLength(2);
-    expect(windows[0].fromDate.toISOString()).toBe("2025-01-01T00:00:00.000Z");
-    expect(windows[0].toDate.toISOString()).toBe("2025-01-03T00:00:00.000Z");
-    expect(windows[1].fromDate.toISOString()).toBe("2025-01-08T00:00:00.000Z");
-    expect(windows[1].toDate.toISOString()).toBe("2025-01-10T00:00:00.000Z");
-  });
-
-  it("returns no windows when local data fully covers range", () => {
-    const windows = buildMissingWindowsForRange(
-      date("2025-01-03"),
-      date("2025-01-08"),
-      {
-        minTradeDate: date("2025-01-01"),
-        maxTradeDate: date("2025-01-10"),
-      },
-    );
-
-    expect(windows).toEqual([]);
+    expect(window?.fromDate.toISOString()).toBe("2025-01-10T00:00:00.000Z");
+    expect(window?.toDate.toISOString()).toBe("2025-01-11T00:00:00.000Z");
   });
 });
 
-describe("hydrateHistoricalCacheForSymbols", () => {
+describe("scheduleAsyncTailRefreshForSymbols", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(date("2025-01-20"));
     getTradeDateBoundsBySymbolsMock.mockReset();
     upsertDailyPricesMock.mockReset();
     fetchHistoricalFromYahooMock.mockReset();
+    resetAsyncTailRefreshStateForTests();
   });
 
-  it("does not fetch externally when range is already covered by database", async () => {
-    getTradeDateBoundsBySymbolsMock.mockResolvedValue(new Map([
-      ["AAPL", {
-        minTradeDate: date("2025-01-01"),
-        maxTradeDate: date("2025-01-31"),
-      }],
-    ]));
-
-    const warnings: string[] = [];
-    await hydrateHistoricalCacheForSymbols({
-      symbols: ["AAPL"],
-      fromDate: date("2025-01-05"),
-      toDate: date("2025-01-20"),
-      warnings,
-    });
-
-    expect(fetchHistoricalFromYahooMock).not.toHaveBeenCalled();
-    expect(upsertDailyPricesMock).not.toHaveBeenCalled();
-    expect(warnings).toEqual([]);
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it("fetches only missing tail window and upserts fetched points", async () => {
+  it("fetches only tail gap and upserts rows", async () => {
     getTradeDateBoundsBySymbolsMock.mockResolvedValue(new Map([
       ["AAPL", {
-        minTradeDate: date("2025-01-01"),
+        minTradeDate: date("2024-01-01"),
         maxTradeDate: date("2025-01-10"),
       }],
     ]));
-
     fetchHistoricalFromYahooMock.mockResolvedValue([
       {
         tradeDate: date("2025-01-11"),
@@ -142,13 +109,14 @@ describe("hydrateHistoricalCacheForSymbols", () => {
     ]);
     upsertDailyPricesMock.mockResolvedValue(1);
 
-    const warnings: string[] = [];
-    await hydrateHistoricalCacheForSymbols({
+    scheduleAsyncTailRefreshForSymbols({
+      source: "matrix",
       symbols: ["AAPL"],
       fromDate: date("2025-01-01"),
       toDate: date("2025-01-20"),
-      warnings,
     });
+
+    await waitForAsyncTailRefreshForTests();
 
     expect(fetchHistoricalFromYahooMock).toHaveBeenCalledTimes(1);
     expect(fetchHistoricalFromYahooMock).toHaveBeenCalledWith(
@@ -157,51 +125,33 @@ describe("hydrateHistoricalCacheForSymbols", () => {
       date("2025-01-20"),
     );
     expect(upsertDailyPricesMock).toHaveBeenCalledTimes(1);
-    expect(warnings).toEqual([]);
   });
 
-  it("keeps flowing and writes warning when external fetch fails", async () => {
-    getTradeDateBoundsBySymbolsMock.mockResolvedValue(new Map());
-    fetchHistoricalFromYahooMock.mockRejectedValue(
-      new Error("Yahoo source unavailable (network/region restriction)"),
-    );
-
-    const warnings: string[] = [];
-    await hydrateHistoricalCacheForSymbols({
-      symbols: ["AAPL"],
-      fromDate: date("2025-01-01"),
-      toDate: date("2025-01-20"),
-      warnings,
-    });
-
-    expect(fetchHistoricalFromYahooMock).toHaveBeenCalledTimes(1);
-    expect(upsertDailyPricesMock).not.toHaveBeenCalled();
-    expect(warnings[0]).toContain("AAPL: failed to fetch missing historical data");
-    expect(warnings[0]).toContain("Yahoo source unavailable");
-  });
-
-  it("expands one-day windows so period1 and period2 are not identical", async () => {
+  it("skips repeated refresh in cooldown window", async () => {
     getTradeDateBoundsBySymbolsMock.mockResolvedValue(new Map([
       ["AAPL", {
-        minTradeDate: date("2025-01-02"),
+        minTradeDate: date("2024-01-01"),
         maxTradeDate: date("2025-01-10"),
       }],
     ]));
     fetchHistoricalFromYahooMock.mockResolvedValue([]);
 
-    const warnings: string[] = [];
-    await hydrateHistoricalCacheForSymbols({
+    scheduleAsyncTailRefreshForSymbols({
+      source: "matrix",
       symbols: ["AAPL"],
       fromDate: date("2025-01-01"),
       toDate: date("2025-01-20"),
-      warnings,
     });
+    await waitForAsyncTailRefreshForTests();
 
-    expect(fetchHistoricalFromYahooMock).toHaveBeenNthCalledWith(
-      1,
-      "AAPL",
-      date("2025-01-01"),
-      date("2025-01-02"),
-    );
+    scheduleAsyncTailRefreshForSymbols({
+      source: "matrix",
+      symbols: ["AAPL"],
+      fromDate: date("2025-01-01"),
+      toDate: date("2025-01-20"),
+    });
+    await waitForAsyncTailRefreshForTests();
+
+    expect(fetchHistoricalFromYahooMock).toHaveBeenCalledTimes(1);
   });
 });
