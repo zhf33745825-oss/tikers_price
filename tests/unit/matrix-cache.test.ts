@@ -105,4 +105,56 @@ describe("getMatrixPriceData cache-first flow", () => {
     expect(scheduleAsyncTailRefreshForSymbolsMock).toHaveBeenCalledTimes(1);
     expect(fetchQuoteMetadataFromYahooMock).not.toHaveBeenCalled();
   });
+
+  it("does not surface warnings when yahoo meta refresh fails", async () => {
+    const tradeDate = new Date("2025-01-03T00:00:00.000Z");
+
+    listWatchSymbolRecordsMock.mockResolvedValue([
+      {
+        symbol: "PETR3",
+        displayName: null,
+        regionOverride: null,
+        autoName: null,
+        autoRegion: null,
+        autoCurrency: null,
+        metaUpdatedAt: null,
+        enabled: true,
+        sortOrder: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    getDailyPriceRowsMock.mockResolvedValue([
+      {
+        symbol: "PETR3",
+        tradeDate,
+        close: 32.11,
+        adjClose: 32.11,
+        currency: "BRL",
+      },
+    ]);
+
+    getLatestPriceSnapshotsMock.mockResolvedValue(new Map([[
+      "PETR3",
+      {
+        symbol: "PETR3",
+        tradeDate,
+        close: 32.11,
+        currency: "BRL",
+      },
+    ]]));
+    getWatchSymbolRecordsBySymbolsMock.mockResolvedValue(new Map());
+    fetchQuoteMetadataFromYahooMock.mockRejectedValue(new Error("403 forbidden"));
+
+    const payload = await getMatrixPriceData({
+      mode: "watchlist",
+      preset: "30",
+    });
+
+    expect(payload.warnings).toEqual([]);
+    expect(payload.rows).toHaveLength(1);
+    expect(payload.rows[0].symbol).toBe("PETR3");
+    expect(updateWatchSymbolAutoMetaMock).not.toHaveBeenCalled();
+  });
 });

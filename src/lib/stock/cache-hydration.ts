@@ -4,7 +4,7 @@ import {
   type TradeDateBounds,
   upsertDailyPrices,
 } from "@/lib/stock/repository";
-import { fetchHistoricalFromYahoo } from "@/lib/stock/yahoo";
+import { fetchHistoricalFromYahooWithResolution } from "@/lib/stock/yahoo";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
@@ -34,7 +34,7 @@ function normalizeWindowForFetch(window: TailRefreshWindow): TailRefreshWindow {
     return window;
   }
 
-  // yahoo-finance2 rejects requests where period1 and period2 are identical.
+  // Yahoo chart endpoint is more stable when period2 is after period1.
   return {
     fromDate: window.fromDate,
     toDate: shiftDays(window.toDate, 1),
@@ -118,14 +118,17 @@ async function runAsyncTailRefresh(
 
     const refreshPromise = (async () => {
       try {
-        const points = await fetchHistoricalFromYahoo(
+        const historical = await fetchHistoricalFromYahooWithResolution(
           symbol,
           refreshWindow.fromDate,
           refreshWindow.toDate,
         );
-        if (points.length > 0) {
-          await upsertDailyPrices(symbol, points);
+        if (historical.points.length > 0) {
+          await upsertDailyPrices(symbol, historical.points);
         }
+        logDev(
+          `[async-refresh-result] source=${input.source} source-symbol=${symbol} resolved-symbol=${historical.resolvedSymbol} result-points=${historical.points.length}`,
+        );
       } catch (error) {
         logDevError(
           `[async-refresh-error] source=${input.source} symbol=${symbol} message=${toErrorMessage(error)}`,

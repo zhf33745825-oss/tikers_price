@@ -46,6 +46,12 @@ interface ResolvedSymbolMeta {
   autoCurrency: string | null;
 }
 
+function logDevError(message: string): void {
+  if (process.env.NODE_ENV === "development") {
+    console.warn(message);
+  }
+}
+
 function parseMode(rawMode: string | null | undefined): MatrixMode {
   if (!rawMode || rawMode === "watchlist") {
     return "watchlist";
@@ -125,7 +131,6 @@ function buildRangeSelection(
 
 async function resolveWatchlistMeta(
   watchRecords: WatchSymbolRecord[],
-  warnings: string[],
 ): Promise<Map<string, ResolvedSymbolMeta>> {
   const now = dayjs().tz(SHANGHAI_TIME_ZONE);
   const metaMap = new Map<string, ResolvedSymbolMeta>();
@@ -144,8 +149,8 @@ async function resolveWatchlistMeta(
           metaUpdatedAt: new Date(),
         };
       } catch (error) {
-        warnings.push(
-          `${record.symbol}: failed to refresh meta (${error instanceof Error ? error.message : "unknown error"})`,
+        logDevError(
+          `[meta-refresh-error] symbol=${record.symbol} message=${error instanceof Error ? error.message : "unknown error"}`,
         );
       }
     }
@@ -163,7 +168,6 @@ async function resolveWatchlistMeta(
 async function resolveAdhocMeta(
   symbols: string[],
   watchRecordMap: Map<string, WatchSymbolRecord>,
-  warnings: string[],
 ): Promise<Map<string, ResolvedSymbolMeta>> {
   const now = dayjs().tz(SHANGHAI_TIME_ZONE);
   const metaMap = new Map<string, ResolvedSymbolMeta>();
@@ -185,8 +189,8 @@ async function resolveAdhocMeta(
             metaUpdatedAt: new Date(),
           };
         } catch (error) {
-          warnings.push(
-            `${symbol}: failed to refresh meta (${error instanceof Error ? error.message : "unknown error"})`,
+          logDevError(
+            `[meta-refresh-error] symbol=${symbol} message=${error instanceof Error ? error.message : "unknown error"}`,
           );
         }
       }
@@ -207,8 +211,8 @@ async function resolveAdhocMeta(
         autoCurrency: quoteMeta.autoCurrency,
       });
     } catch (error) {
-      warnings.push(
-        `${symbol}: failed to fetch meta (${error instanceof Error ? error.message : "unknown error"})`,
+      logDevError(
+        `[meta-refresh-error] symbol=${symbol} message=${error instanceof Error ? error.message : "unknown error"}`,
       );
       metaMap.set(symbol, {
         name: symbol,
@@ -280,8 +284,8 @@ export async function getMatrixPriceData(
     getDailyPriceRows(symbols, rangeSelection.pullFromDate, rangeSelection.pullToDate),
     getLatestPriceSnapshots(symbols),
     mode === "watchlist"
-      ? resolveWatchlistMeta(watchRecords, warnings)
-      : resolveAdhocMeta(symbols, watchRecordMap, warnings),
+      ? resolveWatchlistMeta(watchRecords)
+      : resolveAdhocMeta(symbols, watchRecordMap),
   ]);
 
   const allDateKeys = Array.from(new Set(priceRows.map((row) => toDateKey(row.tradeDate)))).sort();

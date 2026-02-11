@@ -6,6 +6,7 @@ describe("region inference", () => {
   it("infers by ticker suffix", () => {
     expect(inferRegionFromSymbol("0700.HK")).toBe("Hong Kong");
     expect(inferRegionFromSymbol("600519.SS")).toBe("China");
+    expect(inferRegionFromSymbol("PETR3.SA")).toBe("Brazil");
     expect(inferRegionFromSymbol("AAPL")).toBe("US");
   });
 
@@ -14,4 +15,3 @@ describe("region inference", () => {
     expect(inferRegionFromExchange("Hong Kong", "0700.HK")).toBe("Hong Kong");
   });
 });
-

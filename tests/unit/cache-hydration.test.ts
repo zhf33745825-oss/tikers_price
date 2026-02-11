@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getTradeDateBoundsBySymbolsMock = vi.hoisted(() => vi.fn());
 const upsertDailyPricesMock = vi.hoisted(() => vi.fn());
-const fetchHistoricalFromYahooMock = vi.hoisted(() => vi.fn());
+const fetchHistoricalFromYahooWithResolutionMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/stock/repository", () => ({
   getTradeDateBoundsBySymbols: getTradeDateBoundsBySymbolsMock,
@@ -10,7 +10,7 @@ vi.mock("@/lib/stock/repository", () => ({
 }));
 
 vi.mock("@/lib/stock/yahoo", () => ({
-  fetchHistoricalFromYahoo: fetchHistoricalFromYahooMock,
+  fetchHistoricalFromYahooWithResolution: fetchHistoricalFromYahooWithResolutionMock,
 }));
 
 import {
@@ -84,7 +84,7 @@ describe("scheduleAsyncTailRefreshForSymbols", () => {
     vi.setSystemTime(date("2025-01-20"));
     getTradeDateBoundsBySymbolsMock.mockReset();
     upsertDailyPricesMock.mockReset();
-    fetchHistoricalFromYahooMock.mockReset();
+    fetchHistoricalFromYahooWithResolutionMock.mockReset();
     resetAsyncTailRefreshStateForTests();
   });
 
@@ -99,14 +99,18 @@ describe("scheduleAsyncTailRefreshForSymbols", () => {
         maxTradeDate: date("2025-01-10"),
       }],
     ]));
-    fetchHistoricalFromYahooMock.mockResolvedValue([
-      {
-        tradeDate: date("2025-01-11"),
-        close: 190.12,
-        adjClose: 190.12,
-        currency: "USD",
-      },
-    ]);
+    fetchHistoricalFromYahooWithResolutionMock.mockResolvedValue({
+      sourceSymbol: "AAPL",
+      resolvedSymbol: "AAPL",
+      points: [
+        {
+          tradeDate: date("2025-01-11"),
+          close: 190.12,
+          adjClose: 190.12,
+          currency: "USD",
+        },
+      ],
+    });
     upsertDailyPricesMock.mockResolvedValue(1);
 
     scheduleAsyncTailRefreshForSymbols({
@@ -118,8 +122,8 @@ describe("scheduleAsyncTailRefreshForSymbols", () => {
 
     await waitForAsyncTailRefreshForTests();
 
-    expect(fetchHistoricalFromYahooMock).toHaveBeenCalledTimes(1);
-    expect(fetchHistoricalFromYahooMock).toHaveBeenCalledWith(
+    expect(fetchHistoricalFromYahooWithResolutionMock).toHaveBeenCalledTimes(1);
+    expect(fetchHistoricalFromYahooWithResolutionMock).toHaveBeenCalledWith(
       "AAPL",
       date("2025-01-11"),
       date("2025-01-20"),
@@ -134,7 +138,11 @@ describe("scheduleAsyncTailRefreshForSymbols", () => {
         maxTradeDate: date("2025-01-10"),
       }],
     ]));
-    fetchHistoricalFromYahooMock.mockResolvedValue([]);
+    fetchHistoricalFromYahooWithResolutionMock.mockResolvedValue({
+      sourceSymbol: "AAPL",
+      resolvedSymbol: "AAPL",
+      points: [],
+    });
 
     scheduleAsyncTailRefreshForSymbols({
       source: "matrix",
@@ -152,6 +160,6 @@ describe("scheduleAsyncTailRefreshForSymbols", () => {
     });
     await waitForAsyncTailRefreshForTests();
 
-    expect(fetchHistoricalFromYahooMock).toHaveBeenCalledTimes(1);
+    expect(fetchHistoricalFromYahooWithResolutionMock).toHaveBeenCalledTimes(1);
   });
 });

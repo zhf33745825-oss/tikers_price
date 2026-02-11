@@ -15,6 +15,7 @@ const suffixRegionMap: Array<{ suffix: string; region: string }> = [
   { suffix: ".SW", region: "Switzerland" },
   { suffix: ".MI", region: "Italy" },
   { suffix: ".AX", region: "Australia" },
+  { suffix: ".SA", region: "Brazil" },
   { suffix: ".TW", region: "Taiwan" },
   { suffix: ".NS", region: "India" },
   { suffix: ".BO", region: "India" },
@@ -35,6 +36,8 @@ const exchangeKeywordMap: Array<{ keyword: string; region: string }> = [
   { keyword: "toronto", region: "Canada" },
   { keyword: "london", region: "United Kingdom" },
   { keyword: "frankfurt", region: "Germany" },
+  { keyword: "sao", region: "Brazil" },
+  { keyword: "b3", region: "Brazil" },
 ];
 
 export function inferRegionFromSymbol(symbol: string): string {
@@ -62,4 +65,3 @@ export function inferRegionFromExchange(
   }
   return inferRegionFromSymbol(symbol);
 }
-
