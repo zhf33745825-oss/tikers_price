@@ -1,24 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { IBM_Plex_Mono, Noto_Sans_SC } from "next/font/google";
 
 import "./globals.css";
 
-const notoSans = Noto_Sans_SC({
-  subsets: ["latin"],
-  variable: "--font-noto-sans",
-  weight: ["400", "500", "600", "700"],
-});
-
-const ibmPlexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  variable: "--font-ibm-plex-mono",
-  weight: ["400", "500"],
-});
-
 export const metadata: Metadata = {
   title: "股票历史收盘价矩阵",
-  description: "基于 Yahoo Finance 的股票历史收盘价矩阵，支持自选清单与每日自动更新",
+  description: "基于 Yahoo Finance 的多股票历史收盘价矩阵，支持自选清单与每日自动更新",
 };
 
 export default function RootLayout({
@@ -28,7 +15,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      <body suppressHydrationWarning className={`${notoSans.variable} ${ibmPlexMono.variable}`}>
+      <body suppressHydrationWarning>
         <div className="app-shell">
           <header className="app-header">
             <div>

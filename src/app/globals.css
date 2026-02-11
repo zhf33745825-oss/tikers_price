@@ -1,4 +1,24 @@
 :root {
+  --font-sans-local:
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    "Noto Sans CJK SC",
+    "Source Han Sans SC",
+    "Segoe UI",
+    -apple-system,
+    system-ui,
+    sans-serif;
+  --font-mono-local:
+    "JetBrains Mono",
+    "Cascadia Mono",
+    "Consolas",
+    "Menlo",
+    "Monaco",
+    "Liberation Mono",
+    "Courier New",
+    monospace;
+
   --surface-0: #f8fafc;
   --surface-1: #ffffff;
   --surface-2: #f1f5f9;
@@ -31,7 +51,7 @@ body {
 body {
   min-height: 100vh;
   color: var(--text-1);
-  font-family: var(--font-noto-sans), sans-serif;
+  font-family: var(--font-sans-local);
   background:
     radial-gradient(circle at top right, rgba(15, 118, 110, 0.15), transparent 45%),
     radial-gradient(circle at 10% 20%, rgba(37, 99, 235, 0.12), transparent 35%),
@@ -144,7 +164,7 @@ a {
 .field input,
 .field textarea,
 .field select {
-  font-family: var(--font-ibm-plex-mono), monospace;
+  font-family: var(--font-mono-local);
   width: 100%;
   border-radius: 10px;
   border: 1px solid #cbd5e1;
@@ -289,14 +309,14 @@ a {
   width: 96px;
   min-width: 96px;
   text-align: right;
-  font-family: var(--font-ibm-plex-mono), monospace;
+  font-family: var(--font-mono-local);
 }
 
 .matrix-table .matrix-value {
   width: 96px;
   min-width: 96px;
   text-align: right;
-  font-family: var(--font-ibm-plex-mono), monospace;
+  font-family: var(--font-mono-local);
 }
 
 .matrix-table .matrix-spacer {
