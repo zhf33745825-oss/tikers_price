@@ -8,7 +8,7 @@ import type { MatrixMode, MatrixPreset, MatrixPriceResponse, PriceQueryResponse 
 
 const DATE_COL_WIDTH = 96;
 const VIRTUAL_BUFFER_COLS = 8;
-const DEFAULT_ADHOC_SYMBOLS = "AAPL, MSFT, 0700.HK";
+const DEFAULT_ADHOC_SYMBOLS = "TLX.AX, WTC.AX, XRO.AX, NXT.AX";
 
 interface ChartTableRow {
   date: string;
@@ -426,7 +426,7 @@ export function StockQueryApp() {
 
         <div className="advanced-grid">
           <label className="field">
-            <span>股票代码（逗号 / 空格 / 换行分隔）</span>
+            <span>股票代码（逗号 / 空格 / 换行分隔） 请替换成您要查询的代码</span>
             <textarea
               value={adhocSymbols}
               onChange={(event) => setAdhocSymbols(event.target.value)}
