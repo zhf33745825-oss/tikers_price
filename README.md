@@ -136,6 +136,8 @@ docker compose up -d --build
 ```
 
 数据持久化映射：`./data -> /app/data`
+基础镜像已固定为 `node:20-bookworm-slim`（glibc）。  
+说明：`@libsql` 在 `alpine`（musl）环境下可能出现 `fcntl64: symbol not found`，会导致 `npm run build` 失败。
 
 ## 国内服务器（阿里云）注意事项
 

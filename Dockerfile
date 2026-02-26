@@ -1,12 +1,14 @@
-FROM node:24-alpine AS base
+FROM node:20-bookworm-slim AS base
 WORKDIR /app
+
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    DATABASE_URL=file:./data/app.db
 
 COPY package*.json ./
 RUN npm ci
 
 COPY . .
 RUN mkdir -p /app/data
-RUN npx prisma generate
 RUN npm run build
 
 ENV NODE_ENV=production
