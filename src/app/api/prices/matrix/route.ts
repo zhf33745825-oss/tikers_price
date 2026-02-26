@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
       from: request.nextUrl.searchParams.get("from"),
       to: request.nextUrl.searchParams.get("to"),
       symbols: request.nextUrl.searchParams.get("symbols"),
+      listId: request.nextUrl.searchParams.get("listId"),
     });
 
     return NextResponse.json(payload);
@@ -25,4 +26,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

@@ -7,7 +7,7 @@ import { ensureDefaultWatchlist } from "@/lib/stock/bootstrap";
 import {
   createUpdateJobLog,
   getLastTradeDateForSymbol,
-  listWatchSymbolRecords,
+  listDistinctEnabledSymbolsAcrossWatchlists,
   updateWatchSymbolAutoMeta,
   upsertDailyPrices,
 } from "@/lib/stock/repository";
@@ -75,17 +75,17 @@ export async function runDailyUpdate(now = new Date()): Promise<DailyUpdateResul
   await ensureDefaultWatchlist();
 
   const startedAt = new Date();
-  const watchlist = await listWatchSymbolRecords(true);
+  const symbols = await listDistinctEnabledSymbolsAcrossWatchlists();
   const failures: Array<{ symbol: string; error: string }> = [];
   let successSymbols = 0;
   let failedSymbols = 0;
   let upsertedRows = 0;
   let noOpSymbols = 0;
 
-  for (const item of watchlist) {
+  for (const symbol of symbols) {
     try {
       const updatedRows = await retryWithBackoff(
-        () => updateSingleSymbol(item.symbol, now),
+        () => updateSingleSymbol(symbol, now),
         3,
         500,
       );
@@ -97,7 +97,7 @@ export async function runDailyUpdate(now = new Date()): Promise<DailyUpdateResul
     } catch (error) {
       failedSymbols += 1;
       failures.push({
-        symbol: item.symbol,
+        symbol,
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
@@ -115,10 +115,10 @@ export async function runDailyUpdate(now = new Date()): Promise<DailyUpdateResul
   })();
 
   const message = (() => {
-    if (watchlist.length === 0) {
+    if (symbols.length === 0) {
       return "watchlist-empty";
     }
-    if (status === "success" && noOpSymbols === watchlist.length) {
+    if (status === "success" && noOpSymbols === symbols.length) {
       return "success(no-op)";
     }
     if (status === "partial") {
@@ -135,7 +135,7 @@ export async function runDailyUpdate(now = new Date()): Promise<DailyUpdateResul
     startedAt: startedAt.toISOString(),
     endedAt: endedAt.toISOString(),
     status,
-    totalSymbols: watchlist.length,
+    totalSymbols: symbols.length,
     successSymbols,
     failedSymbols,
     upsertedRows,
@@ -146,4 +146,3 @@ export async function runDailyUpdate(now = new Date()): Promise<DailyUpdateResul
   await createUpdateJobLog(result);
   return result;
 }
-

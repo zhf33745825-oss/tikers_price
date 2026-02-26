@@ -10,10 +10,13 @@ import { buildDateRange, parseDateKeyToDate, toDateKey } from "@/lib/stock/dates
 import { InputError } from "@/lib/stock/errors";
 import { inferRegionFromSymbol } from "@/lib/stock/region";
 import {
+  getDefaultWatchlist,
   getDailyPriceRows,
   getLatestPriceSnapshots,
+  getWatchlistById,
   getWatchSymbolRecordsBySymbols,
-  listWatchSymbolRecords,
+  listWatchlistMemberRecords,
+  listWatchlists,
   updateWatchSymbolAutoMeta,
   type WatchSymbolRecord,
 } from "@/lib/stock/repository";
@@ -30,6 +33,7 @@ export interface MatrixQueryInput {
   from?: string | null;
   to?: string | null;
   symbols?: string | null;
+  listId?: string | null;
 }
 
 interface RangeSelection {
@@ -257,7 +261,31 @@ export async function getMatrixPriceData(
 
   if (mode === "watchlist") {
     await ensureDefaultWatchlist();
-    watchRecords = await listWatchSymbolRecords(true);
+    const requestedListId = input.listId?.trim() || "";
+    const selectedWatchlist = requestedListId
+      ? await getWatchlistById(requestedListId)
+      : (await getDefaultWatchlist()) ?? (await listWatchlists())[0] ?? null;
+    const activeWatchlist = selectedWatchlist
+      ?? (await getDefaultWatchlist())
+      ?? (await listWatchlists())[0]
+      ?? null;
+
+    if (!activeWatchlist) {
+      return {
+        mode,
+        range: {
+          from: rangeSelection.fallbackFrom,
+          to: rangeSelection.fallbackTo,
+          preset,
+        },
+        dates: [],
+        displayDates: [],
+        rows: [],
+        warnings: [],
+      };
+    }
+
+    watchRecords = await listWatchlistMemberRecords(activeWatchlist.id, true);
     symbols = watchRecords.map((item) => item.symbol);
     watchRecordMap = new Map(watchRecords.map((item) => [item.symbol, item]));
   } else {
@@ -276,7 +304,7 @@ export async function getMatrixPriceData(
       dates: [],
       displayDates: [],
       rows: [],
-      warnings: ["no symbols available"],
+      warnings: mode === "watchlist" ? [] : ["no symbols available"],
     };
   }
 

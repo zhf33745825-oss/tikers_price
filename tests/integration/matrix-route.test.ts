@@ -39,6 +39,32 @@ describe("GET /api/prices/matrix", () => {
     expect(getMatrixPriceDataMock).toHaveBeenCalledTimes(1);
   });
 
+  it("forwards listId for watchlist mode", async () => {
+    getMatrixPriceDataMock.mockResolvedValue({
+      mode: "watchlist",
+      range: {
+        from: "2025-01-01",
+        to: "2025-01-31",
+        preset: "30",
+      },
+      dates: [],
+      displayDates: [],
+      rows: [],
+      warnings: [],
+    });
+
+    const request = new NextRequest("http://localhost/api/prices/matrix?mode=watchlist&listId=list-1");
+    const response = await GET(request);
+
+    expect(response.status).toBe(200);
+    expect(getMatrixPriceDataMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "watchlist",
+        listId: "list-1",
+      }),
+    );
+  });
+
   it("returns 400 for input errors", async () => {
     getMatrixPriceDataMock.mockRejectedValue(new InputError("matrix input error"));
 

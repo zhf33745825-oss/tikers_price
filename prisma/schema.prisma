@@ -20,8 +20,37 @@ model WatchSymbol {
   sortOrder     Int       @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  members       WatchlistMember[]
 
   @@index([enabled, sortOrder])
+}
+
+model Watchlist {
+  id        String          @id @default(cuid())
+  name      String          @unique
+  sortOrder Int             @default(0)
+  isDefault Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  members   WatchlistMember[]
+
+  @@index([sortOrder])
+}
+
+model WatchlistMember {
+  id           String     @id @default(cuid())
+  watchlistId   String
+  watchSymbolId String
+  enabled      Boolean    @default(true)
+  sortOrder    Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  watchlist    Watchlist  @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  watchSymbol  WatchSymbol @relation(fields: [watchSymbolId], references: [id], onDelete: Cascade)
+
+  @@unique([watchlistId, watchSymbolId])
+  @@index([watchlistId, enabled, sortOrder])
+  @@index([watchSymbolId])
 }
 
 model DailyPrice {

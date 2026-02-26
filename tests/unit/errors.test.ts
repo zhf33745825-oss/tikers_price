@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isPrismaKnownRequestError,
   normalizeUpstreamErrorMessage,
   normalizeYahooErrorMessage,
 } from "@/lib/stock/errors";
@@ -31,5 +32,22 @@ describe("normalizeYahooErrorMessage", () => {
   it("keeps plain text error as-is", () => {
     const message = normalizeYahooErrorMessage(new Error("ECONNRESET while calling Yahoo API"));
     expect(message).toBe("ECONNRESET while calling Yahoo API");
+  });
+});
+
+describe("isPrismaKnownRequestError", () => {
+  it("matches by prisma error name and code", () => {
+    const error = {
+      name: "PrismaClientKnownRequestError",
+      code: "P2025",
+    };
+
+    expect(isPrismaKnownRequestError(error, "P2025")).toBe(true);
+    expect(isPrismaKnownRequestError(error, "P2002")).toBe(false);
+  });
+
+  it("matches code pattern fallback", () => {
+    expect(isPrismaKnownRequestError({ code: "P2002" })).toBe(true);
+    expect(isPrismaKnownRequestError({ code: "X0000" })).toBe(false);
   });
 });

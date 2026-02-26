@@ -40,6 +40,27 @@ export interface WatchlistResponse {
   lastSuccessfulUpdateAt: string | null;
 }
 
+export interface WatchlistSummary {
+  id: string;
+  name: string;
+  sortOrder: number;
+  isDefault: boolean;
+  symbolCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WatchlistsResponse {
+  lists: WatchlistSummary[];
+  defaultListId: string | null;
+  lastSuccessfulUpdateAt: string | null;
+}
+
+export interface WatchlistMembersResponse {
+  list: WatchlistSummary;
+  items: WatchlistItem[];
+}
+
 export interface DailyUpdateResult {
   jobDate: string;
   startedAt: string;
@@ -80,4 +101,3 @@ export interface MatrixPriceResponse {
   rows: MatrixRow[];
   warnings: string[];
 }
-

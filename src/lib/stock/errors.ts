@@ -80,3 +80,42 @@ export function normalizeYahooErrorMessage(error: unknown): string {
     htmlFallbackMessage: DEFAULT_YAHOO_UNAVAILABLE_MESSAGE,
   });
 }
+
+export function isPrismaKnownRequestError(
+  error: unknown,
+  expectedCode?: string,
+): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    name?: unknown;
+    constructor?: {
+      name?: unknown;
+    };
+  };
+
+  const code = typeof candidate.code === "string" ? candidate.code : undefined;
+  const errorName = typeof candidate.name === "string" ? candidate.name : undefined;
+  const ctorName =
+    typeof candidate.constructor?.name === "string"
+      ? candidate.constructor.name
+      : undefined;
+
+  const isKnown =
+    errorName === "PrismaClientKnownRequestError"
+    || ctorName === "PrismaClientKnownRequestError"
+    || (code !== undefined && /^P\d{4}$/.test(code));
+
+  if (!isKnown) {
+    return false;
+  }
+
+  if (expectedCode === undefined) {
+    return true;
+  }
+
+  return code === expectedCode;
+}

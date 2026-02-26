@@ -10,6 +10,8 @@ export const DEFAULT_WATCHLIST_SYMBOLS = [
   "9988.HK",
 ];
 
+export const DEFAULT_WATCHLIST_NAME = "默认清单";
+
 export const DEFAULT_LOOKBACK_YEARS = 1;
 
 export const DAILY_UPDATE_LOOKBACK_YEARS = 2;
@@ -23,4 +25,3 @@ export const MATRIX_PRESET_DAYS = {
 } as const;
 
 export const META_REFRESH_DAYS = 7;
-

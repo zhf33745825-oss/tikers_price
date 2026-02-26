@@ -1,12 +1,35 @@
 import { appEnv } from "@/lib/env";
-import { bulkInsertWatchSymbols, countWatchSymbols } from "@/lib/stock/repository";
+import { DEFAULT_WATCHLIST_NAME } from "@/lib/stock/constants";
+import {
+  bulkInsertWatchSymbols,
+  countWatchlistMembers,
+  countWatchlists,
+  createWatchlist,
+  getDefaultWatchlist,
+  listWatchlists,
+  setDefaultWatchlist,
+} from "@/lib/stock/repository";
 import { validateSingleSymbol } from "@/lib/stock/symbols";
 
 let bootstrapPromise: Promise<void> | null = null;
 
 async function bootstrapWatchlist(): Promise<void> {
-  const count = await countWatchSymbols();
-  if (count > 0) {
+  const watchlistCount = await countWatchlists();
+  if (watchlistCount === 0) {
+    await createWatchlist(DEFAULT_WATCHLIST_NAME);
+  } else {
+    const defaultWatchlist = await getDefaultWatchlist();
+    if (!defaultWatchlist) {
+      const lists = await listWatchlists();
+      const fallbackList = lists[0];
+      if (fallbackList) {
+        await setDefaultWatchlist(fallbackList.id);
+      }
+    }
+  }
+
+  const memberCount = await countWatchlistMembers();
+  if (memberCount > 0) {
     return;
   }
 
@@ -37,4 +60,3 @@ export async function ensureDefaultWatchlist(): Promise<void> {
 export async function runBootstrapWatchlistScript(): Promise<void> {
   await bootstrapWatchlist();
 }
-

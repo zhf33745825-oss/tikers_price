@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { ensureDefaultWatchlist } from "@/lib/stock/bootstrap";
 import { InputError, toErrorMessage } from "@/lib/stock/errors";
 import {
   addSymbolToWatchlist,
-  getDefaultWatchlist,
-  getLastSuccessfulUpdateAt,
+  getWatchlistById,
   listWatchlistMembers,
 } from "@/lib/stock/repository";
 import { validateSingleSymbol } from "@/lib/stock/symbols";
-import type { WatchlistResponse } from "@/types/stock";
+import type { WatchlistMembersResponse } from "@/types/stock";
+
+interface RouteContext {
+  params: Promise<{
+    listId: string;
+  }>;
+}
 
 const createWatchSymbolSchema = z.object({
   symbol: z.string().min(1, "symbol is required"),
@@ -18,46 +22,41 @@ const createWatchSymbolSchema = z.object({
   regionOverride: z.string().max(100).optional(),
 });
 
-export async function GET() {
+export async function GET(_: NextRequest, context: RouteContext) {
   try {
-    await ensureDefaultWatchlist();
-
-    const defaultWatchlist = await getDefaultWatchlist();
-    if (!defaultWatchlist) {
-      return NextResponse.json({ items: [], lastSuccessfulUpdateAt: null } satisfies WatchlistResponse);
+    const params = await context.params;
+    const list = await getWatchlistById(params.listId);
+    if (!list) {
+      return NextResponse.json({ error: "watchlist not found" }, { status: 404 });
     }
 
-    const [items, lastSuccessfulUpdateAt] = await Promise.all([
-      listWatchlistMembers(defaultWatchlist.id),
-      getLastSuccessfulUpdateAt(),
-    ]);
-
-    const response: WatchlistResponse = {
+    const items = await listWatchlistMembers(params.listId);
+    const response: WatchlistMembersResponse = {
+      list,
       items,
-      lastSuccessfulUpdateAt,
     };
 
     return NextResponse.json(response);
   } catch (error) {
     return NextResponse.json(
-      { error: `failed to load watchlist: ${toErrorMessage(error)}` },
+      { error: `failed to load watchlist members: ${toErrorMessage(error)}` },
       { status: 500 },
     );
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest, context: RouteContext) {
   try {
-    await ensureDefaultWatchlist();
-    const defaultWatchlist = await getDefaultWatchlist();
-    if (!defaultWatchlist) {
-      return NextResponse.json({ error: "default watchlist not found" }, { status: 500 });
+    const params = await context.params;
+    const list = await getWatchlistById(params.listId);
+    if (!list) {
+      return NextResponse.json({ error: "watchlist not found" }, { status: 404 });
     }
 
     const payload = createWatchSymbolSchema.parse(await request.json());
     const symbol = validateSingleSymbol(payload.symbol);
     const item = await addSymbolToWatchlist(
-      defaultWatchlist.id,
+      params.listId,
       symbol,
       payload.displayName,
       payload.regionOverride,

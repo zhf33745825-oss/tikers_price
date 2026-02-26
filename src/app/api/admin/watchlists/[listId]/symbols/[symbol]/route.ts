@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { ensureDefaultWatchlist } from "@/lib/stock/bootstrap";
 import {
   InputError,
   isPrismaKnownRequestError,
   toErrorMessage,
 } from "@/lib/stock/errors";
 import {
-  getDefaultWatchlist,
+  getWatchlistById,
   removeSymbolFromWatchlist,
   updateWatchSymbolOverrides,
 } from "@/lib/stock/repository";
@@ -16,6 +15,7 @@ import { validateSingleSymbol } from "@/lib/stock/symbols";
 
 interface RouteContext {
   params: Promise<{
+    listId: string;
     symbol: string;
   }>;
 }
@@ -28,6 +28,11 @@ const updateWatchSymbolSchema = z.object({
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const params = await context.params;
+    const list = await getWatchlistById(params.listId);
+    if (!list) {
+      return NextResponse.json({ error: "watchlist not found" }, { status: 404 });
+    }
+
     const symbol = validateSingleSymbol(decodeURIComponent(params.symbol));
     const payload = updateWatchSymbolSchema.parse(await request.json());
     const item = await updateWatchSymbolOverrides(symbol, payload);
@@ -52,15 +57,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
 export async function DELETE(_: Request, context: RouteContext) {
   try {
-    await ensureDefaultWatchlist();
-    const defaultWatchlist = await getDefaultWatchlist();
-    if (!defaultWatchlist) {
-      return NextResponse.json({ error: "default watchlist not found" }, { status: 500 });
+    const params = await context.params;
+    const list = await getWatchlistById(params.listId);
+    if (!list) {
+      return NextResponse.json({ error: "watchlist not found" }, { status: 404 });
     }
 
-    const params = await context.params;
     const symbol = validateSingleSymbol(decodeURIComponent(params.symbol));
-    const removed = await removeSymbolFromWatchlist(defaultWatchlist.id, symbol);
+    const removed = await removeSymbolFromWatchlist(params.listId, symbol);
     if (!removed) {
       return NextResponse.json({ error: "symbol not found" }, { status: 404 });
     }
@@ -77,4 +81,3 @@ export async function DELETE(_: Request, context: RouteContext) {
     );
   }
 }
-

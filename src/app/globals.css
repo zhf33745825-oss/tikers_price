@@ -242,6 +242,35 @@ a {
   flex-wrap: wrap;
 }
 
+.watchlist-tabs {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.watchlist-tab-button {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text-1);
+  font-weight: 700;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: 180ms ease;
+}
+
+.watchlist-tab-button:hover:enabled {
+  background: #eef2ff;
+  border-color: #93c5fd;
+}
+
+.watchlist-tab-button.active {
+  background: #dbeafe;
+  border-color: #60a5fa;
+  color: #1d4ed8;
+}
+
 .preset-button {
   background: #334155;
   min-width: 66px;
@@ -427,8 +456,20 @@ a {
   gap: 10px;
 }
 
+.watchlist-create-row {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) auto;
+  gap: 10px;
+  align-items: end;
+}
+
 .admin-table input {
   min-width: 140px;
+}
+
+.selected-list-row {
+  background: #f0fdfa;
 }
 
 .admin-row-actions {
@@ -454,6 +495,10 @@ a {
   }
 
   .admin-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .watchlist-create-row {
     grid-template-columns: 1fr;
   }
 

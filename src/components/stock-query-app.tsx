@@ -9,7 +9,14 @@ import {
   scheduleAutoRefreshTick,
   shouldContinueAutoRefresh,
 } from "@/lib/stock/auto-refresh";
-import type { MatrixMode, MatrixPreset, MatrixPriceResponse, PriceQueryResponse } from "@/types/stock";
+import type {
+  MatrixMode,
+  MatrixPreset,
+  MatrixPriceResponse,
+  PriceQueryResponse,
+  WatchlistSummary,
+  WatchlistsResponse,
+} from "@/types/stock";
 
 const DATE_COL_WIDTH = 96;
 const VIRTUAL_BUFFER_COLS = 8;
@@ -33,6 +40,7 @@ interface MatrixLoadParams {
   from?: string;
   to?: string;
   symbols?: string;
+  listId?: string;
 }
 
 function formatNumber(value: number | null | undefined): string {
@@ -76,6 +84,30 @@ export function getPendingSymbolsFromMatrix(response: MatrixPriceResponse | null
     .map((row) => row.symbol);
 }
 
+function getListIdFromUrl(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const value = new URL(window.location.href).searchParams.get("listId");
+  return value && value.trim() ? value.trim() : null;
+}
+
+function setListIdToUrl(listId: string | null): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const url = new URL(window.location.href);
+  if (listId) {
+    url.searchParams.set("listId", listId);
+  } else {
+    url.searchParams.delete("listId");
+  }
+
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
 export function StockQueryApp() {
   const [preset, setPreset] = useState<MatrixPreset>("30");
   const [customFrom, setCustomFrom] = useState(dayjs().subtract(1, "year").format("YYYY-MM-DD"));
@@ -85,6 +117,9 @@ export function StockQueryApp() {
   const [matrixResponse, setMatrixResponse] = useState<MatrixPriceResponse | null>(null);
   const [matrixMode, setMatrixMode] = useState<MatrixMode>("watchlist");
   const [adhocSymbols, setAdhocSymbols] = useState(DEFAULT_ADHOC_SYMBOLS);
+  const [watchlists, setWatchlists] = useState<WatchlistSummary[]>([]);
+  const [activeWatchlistId, setActiveWatchlistId] = useState<string | null>(null);
+  const [watchlistsLoading, setWatchlistsLoading] = useState(true);
 
   const [chartLoading, setChartLoading] = useState(false);
   const [chartError, setChartError] = useState<string | null>(null);
@@ -130,6 +165,8 @@ export function StockQueryApp() {
       }
       if (params.mode === "adhoc") {
         searchParams.set("symbols", params.symbols ?? "");
+      } else if (params.listId) {
+        searchParams.set("listId", params.listId);
       }
 
       const responseRaw = await fetch(`/api/prices/matrix?${searchParams.toString()}`);
@@ -188,8 +225,9 @@ export function StockQueryApp() {
       from: preset === "custom" ? customFrom : undefined,
       to: preset === "custom" ? customTo : undefined,
       symbols: matrixMode === "adhoc" ? adhocSymbols : undefined,
+      listId: matrixMode === "watchlist" ? activeWatchlistId ?? undefined : undefined,
     };
-  }, [adhocSymbols, customFrom, customTo, matrixMode, preset]);
+  }, [activeWatchlistId, adhocSymbols, customFrom, customTo, matrixMode, preset]);
 
   const loadWatchlistPreset = async (targetPreset: MatrixPreset) => {
     if (targetPreset === "custom") {
@@ -200,6 +238,7 @@ export function StockQueryApp() {
     await loadMatrix({
       mode: "watchlist",
       preset: targetPreset,
+      listId: activeWatchlistId ?? undefined,
     });
   };
 
@@ -210,6 +249,7 @@ export function StockQueryApp() {
       preset: "custom",
       from: customFrom,
       to: customTo,
+      listId: activeWatchlistId ?? undefined,
     });
   };
 
@@ -225,6 +265,18 @@ export function StockQueryApp() {
 
   const refreshMatrix = async () => {
     await loadMatrix(buildCurrentMatrixParams(), "user");
+  };
+
+  const handleSelectWatchlist = async (listId: string) => {
+    setActiveWatchlistId(listId);
+    setListIdToUrl(listId);
+    await loadMatrix({
+      mode: "watchlist",
+      preset,
+      from: preset === "custom" ? customFrom : undefined,
+      to: preset === "custom" ? customTo : undefined,
+      listId,
+    });
   };
 
   const loadChartData = async () => {
@@ -253,12 +305,72 @@ export function StockQueryApp() {
     }
   };
 
+  const loadWatchlists = useCallback(async (preferredListId?: string | null) => {
+    setWatchlistsLoading(true);
+    try {
+      const response = await fetch("/api/admin/watchlists");
+      const body = await response.json();
+      if (!response.ok) {
+        setMatrixError(body.error ?? "加载清单失败");
+        setWatchlists([]);
+        setActiveWatchlistId(null);
+        return null;
+      }
+
+      const payload = body as WatchlistsResponse;
+      const lists = payload.lists ?? [];
+      setWatchlists(lists);
+
+      if (lists.length === 0) {
+        setActiveWatchlistId(null);
+        setListIdToUrl(null);
+        return null;
+      }
+
+      const requestedId = preferredListId ?? getListIdFromUrl();
+      const nextActiveId =
+        (requestedId && lists.some((item) => item.id === requestedId) ? requestedId : null)
+        ?? (payload.defaultListId && lists.some((item) => item.id === payload.defaultListId)
+          ? payload.defaultListId
+          : null)
+        ?? lists[0]?.id
+        ?? null;
+
+      setActiveWatchlistId(nextActiveId);
+      setListIdToUrl(nextActiveId);
+      return nextActiveId;
+    } catch (error) {
+      setMatrixError(error instanceof Error ? error.message : "网络错误");
+      setWatchlists([]);
+      setActiveWatchlistId(null);
+      return null;
+    } finally {
+      setWatchlistsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    void loadMatrix({
-      mode: "watchlist",
-      preset: "30",
-    });
-  }, [loadMatrix]);
+    let cancelled = false;
+
+    const init = async () => {
+      const listId = await loadWatchlists();
+      if (cancelled) {
+        return;
+      }
+
+      await loadMatrix({
+        mode: "watchlist",
+        preset: "30",
+        listId: listId ?? undefined,
+      });
+    };
+
+    void init();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadMatrix, loadWatchlists]);
 
   useEffect(() => {
     if (matrixMode !== "watchlist") {
@@ -392,6 +504,11 @@ export function StockQueryApp() {
     return rows.filter((row) => row.symbol === chartSymbolFilter);
   }, [chartResponse, chartSymbolFilter]);
 
+  const activeWatchlist = useMemo(
+    () => watchlists.find((item) => item.id === activeWatchlistId) ?? null,
+    [activeWatchlistId, watchlists],
+  );
+
   return (
     <section className="content-section">
       <div className="panel">
@@ -399,7 +516,9 @@ export function StockQueryApp() {
           <div>
             <h2 className="panel-title">股票收盘价矩阵</h2>
             <p className="subtle">
-              模式：{matrixMode === "watchlist" ? "自选清单" : "临时查询"} | 缺失值显示为 N/A
+              模式：{matrixMode === "watchlist" ? "自选清单" : "临时查询"}
+              {matrixMode === "watchlist" && activeWatchlist ? ` | 当前清单：${activeWatchlist.name}` : ""}
+              {" | "}缺失值显示为 N/A
             </p>
           </div>
 
@@ -446,6 +565,32 @@ export function StockQueryApp() {
             </button>
           </div>
         </div>
+
+        {watchlistsLoading ? (
+          <p className="subtle">加载清单中...</p>
+        ) : null}
+
+        {!watchlistsLoading && watchlists.length > 0 ? (
+          <div className="watchlist-tabs" role="tablist" aria-label="首页清单切换">
+            {watchlists.map((list) => (
+              <button
+                key={list.id}
+                type="button"
+                role="tab"
+                aria-selected={activeWatchlistId === list.id}
+                className={`watchlist-tab-button ${activeWatchlistId === list.id ? "active" : ""}`}
+                onClick={() => void handleSelectWatchlist(list.id)}
+                disabled={matrixLoading && activeWatchlistId === list.id}
+              >
+                {list.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {!watchlistsLoading && watchlists.length === 0 ? (
+          <p className="subtle">暂无清单，请到“自选清单管理”创建。</p>
+        ) : null}
 
         {preset === "custom" ? (
           <div className="custom-range-row">
@@ -499,6 +644,14 @@ export function StockQueryApp() {
             ))}
           </div>
         ) : null}
+
+        {!matrixLoading
+        && matrixResponse
+        && matrixResponse.mode === "watchlist"
+        && matrixResponse.rows.length === 0
+        && watchlists.length > 0 ? (
+          <p className="subtle">当前清单暂无股票代码，请到“自选清单管理”添加。</p>
+          ) : null}
 
         <div
           className="matrix-scroll"

@@ -4,8 +4,11 @@ const ensureDefaultWatchlistMock = vi.hoisted(() => vi.fn());
 const scheduleAsyncTailRefreshForSymbolsMock = vi.hoisted(() => vi.fn());
 const getDailyPriceRowsMock = vi.hoisted(() => vi.fn());
 const getLatestPriceSnapshotsMock = vi.hoisted(() => vi.fn());
+const getDefaultWatchlistMock = vi.hoisted(() => vi.fn());
+const getWatchlistByIdMock = vi.hoisted(() => vi.fn());
 const getWatchSymbolRecordsBySymbolsMock = vi.hoisted(() => vi.fn());
-const listWatchSymbolRecordsMock = vi.hoisted(() => vi.fn());
+const listWatchlistMemberRecordsMock = vi.hoisted(() => vi.fn());
+const listWatchlistsMock = vi.hoisted(() => vi.fn());
 const updateWatchSymbolAutoMetaMock = vi.hoisted(() => vi.fn());
 const fetchQuoteMetadataFromYahooMock = vi.hoisted(() => vi.fn());
 
@@ -19,9 +22,12 @@ vi.mock("@/lib/stock/cache-hydration", () => ({
 
 vi.mock("@/lib/stock/repository", () => ({
   getDailyPriceRows: getDailyPriceRowsMock,
+  getDefaultWatchlist: getDefaultWatchlistMock,
   getLatestPriceSnapshots: getLatestPriceSnapshotsMock,
+  getWatchlistById: getWatchlistByIdMock,
   getWatchSymbolRecordsBySymbols: getWatchSymbolRecordsBySymbolsMock,
-  listWatchSymbolRecords: listWatchSymbolRecordsMock,
+  listWatchlistMemberRecords: listWatchlistMemberRecordsMock,
+  listWatchlists: listWatchlistsMock,
   updateWatchSymbolAutoMeta: updateWatchSymbolAutoMetaMock,
 }));
 
@@ -36,11 +42,26 @@ describe("getMatrixPriceData cache-first flow", () => {
     ensureDefaultWatchlistMock.mockReset();
     scheduleAsyncTailRefreshForSymbolsMock.mockReset();
     getDailyPriceRowsMock.mockReset();
+    getDefaultWatchlistMock.mockReset();
     getLatestPriceSnapshotsMock.mockReset();
+    getWatchlistByIdMock.mockReset();
     getWatchSymbolRecordsBySymbolsMock.mockReset();
-    listWatchSymbolRecordsMock.mockReset();
+    listWatchlistMemberRecordsMock.mockReset();
+    listWatchlistsMock.mockReset();
     updateWatchSymbolAutoMetaMock.mockReset();
     fetchQuoteMetadataFromYahooMock.mockReset();
+
+    getDefaultWatchlistMock.mockResolvedValue({
+      id: "default-list",
+      name: "默认清单",
+      sortOrder: 1,
+      isDefault: true,
+      symbolCount: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    getWatchlistByIdMock.mockResolvedValue(null);
+    listWatchlistsMock.mockResolvedValue([]);
   });
 
   it("returns DB rows immediately and orders dates from newest to oldest", async () => {
@@ -48,7 +69,7 @@ describe("getMatrixPriceData cache-first flow", () => {
     const tradeDateOld = new Date("2025-01-02T00:00:00.000Z");
     const tradeDateNew = new Date("2025-01-03T00:00:00.000Z");
 
-    listWatchSymbolRecordsMock.mockResolvedValue([
+    listWatchlistMemberRecordsMock.mockResolvedValue([
       {
         symbol: "AAPL",
         displayName: null,
@@ -109,7 +130,7 @@ describe("getMatrixPriceData cache-first flow", () => {
   it("does not surface warnings when yahoo meta refresh fails", async () => {
     const tradeDate = new Date("2025-01-03T00:00:00.000Z");
 
-    listWatchSymbolRecordsMock.mockResolvedValue([
+    listWatchlistMemberRecordsMock.mockResolvedValue([
       {
         symbol: "PETR3",
         displayName: null,

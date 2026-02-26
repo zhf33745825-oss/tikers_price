@@ -2,32 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { InputError, toErrorMessage } from "@/lib/stock/errors";
-import { ensureDefaultWatchlist } from "@/lib/stock/bootstrap";
-import { getDefaultWatchlist, moveWatchlistMember } from "@/lib/stock/repository";
+import { getWatchlistById, moveWatchlistMember } from "@/lib/stock/repository";
 import { validateSingleSymbol } from "@/lib/stock/symbols";
+
+interface RouteContext {
+  params: Promise<{
+    listId: string;
+  }>;
+}
 
 const reorderSchema = z.object({
   symbol: z.string().min(1, "symbol is required"),
   direction: z.enum(["up", "down"]),
 });
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest, context: RouteContext) {
   try {
-    await ensureDefaultWatchlist();
-    const defaultWatchlist = await getDefaultWatchlist();
-    if (!defaultWatchlist) {
-      return NextResponse.json({ error: "default watchlist not found" }, { status: 500 });
+    const params = await context.params;
+    const list = await getWatchlistById(params.listId);
+    if (!list) {
+      return NextResponse.json({ error: "watchlist not found" }, { status: 404 });
     }
 
     const payload = reorderSchema.parse(await request.json());
     const symbol = validateSingleSymbol(payload.symbol);
-    const moved = await moveWatchlistMember(defaultWatchlist.id, symbol, payload.direction);
+    const moved = await moveWatchlistMember(params.listId, symbol, payload.direction);
 
-    if (!moved) {
-      return NextResponse.json({ ok: true, moved: false });
-    }
-
-    return NextResponse.json({ ok: true, moved: true });
+    return NextResponse.json({ ok: true, moved });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues[0]?.message ?? "invalid payload" }, { status: 400 });
