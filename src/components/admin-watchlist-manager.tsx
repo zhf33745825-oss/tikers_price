@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -31,7 +31,6 @@ export function AdminWatchlistManager() {
   const [lists, setLists] = useState<WatchlistSummary[]>([]);
   const [activeListId, setActiveListId] = useState<string | null>(null);
   const [items, setItems] = useState<WatchlistItem[]>([]);
-  const [lastUpdateAt, setLastUpdateAt] = useState<string | null>(null);
 
   const [newListName, setNewListName] = useState("");
   const [symbol, setSymbol] = useState("");
@@ -73,13 +72,11 @@ export function AdminWatchlistManager() {
         setError(body.error ?? "加载清单失败");
         setLists([]);
         setActiveListId(null);
-        setLastUpdateAt(null);
         return null;
       }
 
       const data = body as WatchlistsResponse;
       setLists(data.lists);
-      setLastUpdateAt(data.lastSuccessfulUpdateAt);
       syncListNameDrafts(data.lists);
 
       const nextActiveListId =
@@ -99,7 +96,6 @@ export function AdminWatchlistManager() {
       setError(fetchError instanceof Error ? fetchError.message : "网络错误");
       setLists([]);
       setActiveListId(null);
-      setLastUpdateAt(null);
       return null;
     } finally {
       setLoadingLists(false);
@@ -401,30 +397,35 @@ export function AdminWatchlistManager() {
     <section className="content-section">
       <div className="panel">
         <h2 className="panel-title">清单管理</h2>
-        <p className="subtle">
-          最近一次成功日更：{formatDateTime(lastUpdateAt)}
-        </p>
-
-        <div className="watchlist-create-row">
-          <label className="field">
-            <span>新清单名称</span>
-            <input
-              value={newListName}
-              onChange={(event) => setNewListName(event.target.value)}
-              placeholder="例如 清单一"
-            />
-          </label>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => void handleCreateList()}
-            disabled={creatingList}
-          >
-            {creatingList ? "创建中..." : "新建清单"}
-          </button>
+        <div className="admin-subpanel watchlist-create-panel">
+          <div className="admin-subpanel-header">
+            <h3 className="admin-subpanel-title">新建清单</h3>
+            <p className="subtle">创建后会出现在首页清单标签中，方便快速切换。</p>
+          </div>
+          <div className="watchlist-create-row">
+            <label className="field">
+              <span>新清单名称</span>
+              <input
+                value={newListName}
+                onChange={(event) => setNewListName(event.target.value)}
+                placeholder="例如 清单一"
+              />
+            </label>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void handleCreateList()}
+              disabled={creatingList}
+            >
+              {creatingList ? "创建中..." : "新建清单"}
+            </button>
+          </div>
         </div>
 
-        {loadingLists ? <p className="subtle">加载清单中...</p> : null}
+        <div className="watchlist-list-section">
+          <h3 className="section-subtitle">清单列表管理</h3>
+
+          {loadingLists ? <p className="subtle">加载清单中...</p> : null}
 
         {!loadingLists && lists.length === 0 ? (
           <p className="subtle">暂无清单</p>
@@ -497,6 +498,8 @@ export function AdminWatchlistManager() {
             </table>
           </div>
         ) : null}
+
+        </div>
 
         {error ? <p className="error-text">{error}</p> : null}
       </div>
@@ -571,11 +574,11 @@ export function AdminWatchlistManager() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => {
+                {items.map((item, index) => {
                   const key = rowEditKey(activeListId, item.symbol);
                   return (
                     <tr key={`${activeListId}:${item.symbol}`}>
-                      <td>{item.sortOrder}</td>
+                      <td>{index + 1}</td>
                       <td>{item.symbol}</td>
                       <td>{item.resolvedName}</td>
                       <td>{item.resolvedRegion}</td>
@@ -651,3 +654,4 @@ export function AdminWatchlistManager() {
     </section>
   );
 }
+

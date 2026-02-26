@@ -198,6 +198,45 @@ async function getNextWatchlistMemberSortOrder(watchlistId: string): Promise<num
   return (result._max.sortOrder ?? 0) + 1;
 }
 
+async function compactWatchlistMemberSortOrders(watchlistId: string): Promise<void> {
+  const rows = await prisma.watchlistMember.findMany({
+    where: { watchlistId },
+    include: {
+      watchSymbol: {
+        select: {
+          symbol: true,
+        },
+      },
+    },
+    orderBy: [{ sortOrder: "asc" }],
+  });
+
+  rows.sort((a, b) => {
+    if (a.sortOrder === b.sortOrder) {
+      return a.watchSymbol.symbol.localeCompare(b.watchSymbol.symbol);
+    }
+    return a.sortOrder - b.sortOrder;
+  });
+
+  const updates = rows.flatMap((row, index) => {
+    const nextSortOrder = index + 1;
+    if (row.sortOrder === nextSortOrder) {
+      return [];
+    }
+
+    return [
+      prisma.watchlistMember.update({
+        where: { id: row.id },
+        data: { sortOrder: nextSortOrder },
+      }),
+    ];
+  });
+
+  if (updates.length > 0) {
+    await prisma.$transaction(updates);
+  }
+}
+
 async function ensureDefaultWatchlistRecord(): Promise<WatchlistSummaryRecord> {
   const existingDefault = await prisma.watchlist.findFirst({
     where: { isDefault: true },
@@ -764,7 +803,12 @@ export async function removeSymbolFromWatchlist(
     },
   });
 
-  return result.count > 0;
+  if (result.count > 0) {
+    await compactWatchlistMemberSortOrders(listId);
+    return true;
+  }
+
+  return false;
 }
 
 export async function listWatchSymbolRecords(enabledOnly = false): Promise<WatchSymbolRecord[]> {
