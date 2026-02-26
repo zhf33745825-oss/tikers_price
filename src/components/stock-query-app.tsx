@@ -3,7 +3,6 @@
 import dayjs from "dayjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { PriceChart } from "@/components/price-chart";
 import {
   hasAutoRefreshTimedOut,
   scheduleAutoRefreshTick,
@@ -13,26 +12,16 @@ import type {
   MatrixMode,
   MatrixPreset,
   MatrixPriceResponse,
-  PriceQueryResponse,
   WatchlistSummary,
   WatchlistsResponse,
 } from "@/types/stock";
 
 const DATE_COL_WIDTH = 96;
 const VIRTUAL_BUFFER_COLS = 8;
-const DEFAULT_ADHOC_SYMBOLS = "TLX.AX, WTC.AX, XRO.AX, NXT.AX";
 const AUTO_REFRESH_INTERVAL_MS = 2500;
 const AUTO_REFRESH_MAX_ATTEMPTS = 8;
 
 type MatrixLoadSource = "user" | "auto";
-
-interface ChartTableRow {
-  date: string;
-  symbol: string;
-  close: number;
-  adjClose: number;
-  currency: string;
-}
 
 interface MatrixLoadParams {
   mode: MatrixMode;
@@ -116,15 +105,9 @@ export function StockQueryApp() {
   const [matrixError, setMatrixError] = useState<string | null>(null);
   const [matrixResponse, setMatrixResponse] = useState<MatrixPriceResponse | null>(null);
   const [matrixMode, setMatrixMode] = useState<MatrixMode>("watchlist");
-  const [adhocSymbols, setAdhocSymbols] = useState(DEFAULT_ADHOC_SYMBOLS);
   const [watchlists, setWatchlists] = useState<WatchlistSummary[]>([]);
   const [activeWatchlistId, setActiveWatchlistId] = useState<string | null>(null);
   const [watchlistsLoading, setWatchlistsLoading] = useState(true);
-
-  const [chartLoading, setChartLoading] = useState(false);
-  const [chartError, setChartError] = useState<string | null>(null);
-  const [chartResponse, setChartResponse] = useState<PriceQueryResponse | null>(null);
-  const [chartSymbolFilter, setChartSymbolFilter] = useState("ALL");
 
   const matrixScrollRef = useRef<HTMLDivElement>(null);
   const lastMatrixParamsRef = useRef<MatrixLoadParams | null>(null);
@@ -224,10 +207,9 @@ export function StockQueryApp() {
       preset,
       from: preset === "custom" ? customFrom : undefined,
       to: preset === "custom" ? customTo : undefined,
-      symbols: matrixMode === "adhoc" ? adhocSymbols : undefined,
       listId: matrixMode === "watchlist" ? activeWatchlistId ?? undefined : undefined,
     };
-  }, [activeWatchlistId, adhocSymbols, customFrom, customTo, matrixMode, preset]);
+  }, [activeWatchlistId, customFrom, customTo, matrixMode, preset]);
 
   const loadWatchlistPreset = async (targetPreset: MatrixPreset) => {
     if (targetPreset === "custom") {
@@ -253,16 +235,6 @@ export function StockQueryApp() {
     });
   };
 
-  const applyAdhocMatrix = async () => {
-    await loadMatrix({
-      mode: "adhoc",
-      preset,
-      from: preset === "custom" ? customFrom : undefined,
-      to: preset === "custom" ? customTo : undefined,
-      symbols: adhocSymbols,
-    });
-  };
-
   const refreshMatrix = async () => {
     await loadMatrix(buildCurrentMatrixParams(), "user");
   };
@@ -277,32 +249,6 @@ export function StockQueryApp() {
       to: preset === "custom" ? customTo : undefined,
       listId,
     });
-  };
-
-  const loadChartData = async () => {
-    setChartLoading(true);
-    setChartError(null);
-    try {
-      const params = new URLSearchParams({
-        symbols: adhocSymbols,
-        from: customFrom,
-        to: customTo,
-      });
-
-      const responseRaw = await fetch(`/api/prices?${params.toString()}`);
-      const body = await responseRaw.json();
-      if (!responseRaw.ok) {
-        setChartError(body.error ?? "加载图表数据失败");
-        return;
-      }
-
-      setChartResponse(body as PriceQueryResponse);
-      setChartSymbolFilter("ALL");
-    } catch (error) {
-      setChartError(error instanceof Error ? error.message : "网络错误");
-    } finally {
-      setChartLoading(false);
-    }
   };
 
   const loadWatchlists = useCallback(async (preferredListId?: string | null) => {
@@ -468,41 +414,6 @@ export function StockQueryApp() {
     }
     return matrixResponse.displayDates.slice(virtualWindow.startIndex, virtualWindow.endIndex);
   }, [matrixResponse, virtualWindow]);
-
-  const chartSymbols = useMemo(() => {
-    if (!chartResponse) {
-      return [];
-    }
-    return chartResponse.series.map((item) => item.symbol);
-  }, [chartResponse]);
-
-  const chartTableRows = useMemo<ChartTableRow[]>(() => {
-    if (!chartResponse) {
-      return [];
-    }
-
-    const rows = chartResponse.series.flatMap((item) =>
-      item.points.map((point) => ({
-        date: point.date,
-        symbol: item.symbol,
-        close: point.close,
-        adjClose: point.adjClose,
-        currency: item.currency,
-      })),
-    );
-
-    rows.sort((a, b) => {
-      if (a.date === b.date) {
-        return a.symbol.localeCompare(b.symbol);
-      }
-      return a.date < b.date ? 1 : -1;
-    });
-
-    if (chartSymbolFilter === "ALL") {
-      return rows;
-    }
-    return rows.filter((row) => row.symbol === chartSymbolFilter);
-  }, [chartResponse, chartSymbolFilter]);
 
   const activeWatchlist = useMemo(
     () => watchlists.find((item) => item.id === activeWatchlistId) ?? null,
@@ -720,102 +631,6 @@ export function StockQueryApp() {
           </table>
         </div>
       </div>
-
-      <details className="panel advanced-panel">
-        <summary className="advanced-summary">高级查询与图表</summary>
-
-        <div className="advanced-grid">
-          <label className="field">
-            <span>股票代码（逗号 / 空格 / 换行分隔） 请替换成您要查询的代码</span>
-            <textarea
-              value={adhocSymbols}
-              onChange={(event) => setAdhocSymbols(event.target.value)}
-              rows={4}
-            />
-          </label>
-
-          <div className="advanced-actions">
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() => void applyAdhocMatrix()}
-              disabled={matrixLoading}
-            >
-              {matrixLoading ? "应用中..." : "应用到矩阵"}
-            </button>
-
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() => void loadChartData()}
-              disabled={chartLoading}
-            >
-              {chartLoading ? "加载中..." : "加载图表数据"}
-            </button>
-          </div>
-        </div>
-
-        {chartError ? <p className="error-text">{chartError}</p> : null}
-
-        {chartResponse?.warnings?.length ? (
-          <div className="inline-warning">
-            {chartResponse.warnings.map((warning, index) => (
-              <div key={`${index}-${warning}`}>{sanitizeWarningText(warning)}</div>
-            ))}
-          </div>
-        ) : null}
-
-        {chartResponse && chartResponse.series.length > 0 ? (
-          <>
-            <PriceChart series={chartResponse.series} />
-
-            <div className="panel nested-panel">
-              <div className="table-header">
-                <h3 className="panel-title">历史价格表</h3>
-                <label className="field compact">
-                  <span>按代码筛选</span>
-                  <select
-                    value={chartSymbolFilter}
-                    onChange={(event) => setChartSymbolFilter(event.target.value)}
-                  >
-                    <option value="ALL">全部</option>
-                    {chartSymbols.map((symbol) => (
-                      <option key={symbol} value={symbol}>
-                        {symbol}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <div className="table-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>日期</th>
-                      <th>代码</th>
-                      <th>收盘价</th>
-                      <th>复权收盘价</th>
-                      <th>币种</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {chartTableRows.map((row) => (
-                      <tr key={`${row.symbol}-${row.date}`}>
-                        <td>{row.date}</td>
-                        <td>{row.symbol}</td>
-                        <td>{formatNumber(row.close)}</td>
-                        <td>{formatNumber(row.adjClose)}</td>
-                        <td>{row.currency}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
-        ) : null}
-      </details>
     </section>
   );
 }
