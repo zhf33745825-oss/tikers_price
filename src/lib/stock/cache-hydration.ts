@@ -19,6 +19,10 @@ interface AsyncTailRefreshInput {
   fromDate: Date;
   toDate: Date;
   source: "matrix" | "query";
+  strategy?: {
+    recentSeedLookbackDays?: number;
+    backfillLookbackDays?: number;
+  };
 }
 
 const symbolLastRefreshAt = new Map<string, number>();
@@ -66,12 +70,24 @@ export function buildTailRefreshWindow(
   fromDate: Date,
   toDate: Date,
   bounds: TradeDateBounds | undefined,
+  options?: {
+    recentSeedLookbackDays?: number;
+  },
 ): TailRefreshWindow | null {
   if (fromDate.getTime() > toDate.getTime()) {
     return null;
   }
 
   if (!bounds) {
+    const recentSeedLookbackDays = Math.max(0, Math.floor(options?.recentSeedLookbackDays ?? 0));
+    if (recentSeedLookbackDays > 0) {
+      const seededFromDate = shiftDays(toDate, -(recentSeedLookbackDays - 1));
+      return normalizeWindowForFetch({
+        fromDate: seededFromDate.getTime() > fromDate.getTime() ? seededFromDate : fromDate,
+        toDate,
+      });
+    }
+
     return normalizeWindowForFetch({ fromDate, toDate });
   }
 
@@ -92,6 +108,33 @@ export function buildTailRefreshWindow(
   });
 }
 
+function buildBackfillWindowAfterSeed(
+  fromDate: Date,
+  toDate: Date,
+  seededWindow: TailRefreshWindow,
+  options?: {
+    backfillLookbackDays?: number;
+  },
+): TailRefreshWindow | null {
+  const backfillLookbackDays = Math.max(0, Math.floor(options?.backfillLookbackDays ?? 0));
+  if (backfillLookbackDays <= 0) {
+    return null;
+  }
+
+  const targetBackfillFrom = shiftDays(toDate, -(backfillLookbackDays - 1));
+  const backfillFrom = targetBackfillFrom.getTime() > fromDate.getTime() ? targetBackfillFrom : fromDate;
+  const backfillTo = shiftDays(seededWindow.fromDate, -1);
+
+  if (backfillFrom.getTime() > backfillTo.getTime()) {
+    return null;
+  }
+
+  return normalizeWindowForFetch({
+    fromDate: backfillFrom,
+    toDate: backfillTo,
+  });
+}
+
 async function runAsyncTailRefresh(
   input: AsyncTailRefreshInput,
 ): Promise<void> {
@@ -108,27 +151,60 @@ async function runAsyncTailRefresh(
       continue;
     }
 
-    const refreshWindow = buildTailRefreshWindow(input.fromDate, input.toDate, boundsBySymbol.get(symbol));
+    const symbolBounds = boundsBySymbol.get(symbol);
+    const refreshWindow = buildTailRefreshWindow(
+      input.fromDate,
+      input.toDate,
+      symbolBounds,
+      {
+        recentSeedLookbackDays: input.strategy?.recentSeedLookbackDays,
+      },
+    );
     if (!refreshWindow) {
       continue;
     }
+
+    const backfillWindow = !symbolBounds
+      ? buildBackfillWindowAfterSeed(
+        input.fromDate,
+        input.toDate,
+        refreshWindow,
+        {
+          backfillLookbackDays: input.strategy?.backfillLookbackDays,
+        },
+      )
+      : null;
 
     symbolLastRefreshAt.set(symbol, nowMs);
     triggeredSymbols.push(symbol);
 
     const refreshPromise = (async () => {
       try {
-        const historical = await fetchHistoricalFromYahooWithResolution(
+        const seedHistorical = await fetchHistoricalFromYahooWithResolution(
           symbol,
           refreshWindow.fromDate,
           refreshWindow.toDate,
         );
-        if (historical.points.length > 0) {
-          await upsertDailyPrices(symbol, historical.points);
+        if (seedHistorical.points.length > 0) {
+          await upsertDailyPrices(symbol, seedHistorical.points);
         }
         logDev(
-          `[async-refresh-result] source=${input.source} source-symbol=${symbol} resolved-symbol=${historical.resolvedSymbol} result-points=${historical.points.length}`,
+          `[async-refresh-result] source=${input.source} stage=seed source-symbol=${symbol} resolved-symbol=${seedHistorical.resolvedSymbol} result-points=${seedHistorical.points.length}`,
         );
+
+        if (backfillWindow) {
+          const backfillHistorical = await fetchHistoricalFromYahooWithResolution(
+            symbol,
+            backfillWindow.fromDate,
+            backfillWindow.toDate,
+          );
+          if (backfillHistorical.points.length > 0) {
+            await upsertDailyPrices(symbol, backfillHistorical.points);
+          }
+          logDev(
+            `[async-refresh-result] source=${input.source} stage=backfill source-symbol=${symbol} resolved-symbol=${backfillHistorical.resolvedSymbol} result-points=${backfillHistorical.points.length}`,
+          );
+        }
       } catch (error) {
         logDevError(
           `[async-refresh-error] source=${input.source} symbol=${symbol} message=${toErrorMessage(error)}`,

@@ -50,6 +50,40 @@ interface ResolvedSymbolMeta {
   autoCurrency: string | null;
 }
 
+function getMatrixRecentSeedLookbackDays(preset: MatrixPreset): number | undefined {
+  if (preset === "custom") {
+    return undefined;
+  }
+
+  switch (preset) {
+    case "7":
+      return 14;
+    case "30":
+      return 14;
+    case "90":
+      return 21;
+    default:
+      return undefined;
+  }
+}
+
+function getMatrixBackfillLookbackDays(preset: MatrixPreset): number | undefined {
+  if (preset === "custom") {
+    return undefined;
+  }
+
+  switch (preset) {
+    case "7":
+      return 45;
+    case "30":
+      return 120;
+    case "90":
+      return 365;
+    default:
+      return undefined;
+  }
+}
+
 function logDevError(message: string): void {
   if (process.env.NODE_ENV === "development") {
     console.warn(message);
@@ -138,32 +172,33 @@ async function resolveWatchlistMeta(
 ): Promise<Map<string, ResolvedSymbolMeta>> {
   const now = dayjs().tz(SHANGHAI_TIME_ZONE);
   const metaMap = new Map<string, ResolvedSymbolMeta>();
+  const staleRecords: WatchSymbolRecord[] = [];
 
   for (const record of watchRecords) {
-    let activeRecord = record;
     if (shouldRefreshMeta(record, now)) {
-      try {
-        const quoteMeta = await fetchQuoteMetadataFromYahoo(record.symbol);
-        await updateWatchSymbolAutoMeta(record.symbol, quoteMeta);
-        activeRecord = {
-          ...record,
-          autoName: quoteMeta.autoName,
-          autoRegion: quoteMeta.autoRegion,
-          autoCurrency: quoteMeta.autoCurrency,
-          metaUpdatedAt: new Date(),
-        };
-      } catch (error) {
-        logDevError(
-          `[meta-refresh-error] symbol=${record.symbol} message=${error instanceof Error ? error.message : "unknown error"}`,
-        );
-      }
+      staleRecords.push(record);
     }
 
     metaMap.set(record.symbol, {
-      name: resolveName(activeRecord, record.symbol),
-      region: resolveRegion(activeRecord, record.symbol),
-      autoCurrency: activeRecord.autoCurrency,
+      name: resolveName(record, record.symbol),
+      region: resolveRegion(record, record.symbol),
+      autoCurrency: record.autoCurrency,
     });
+  }
+
+  if (staleRecords.length > 0) {
+    void Promise.allSettled(
+      staleRecords.map(async (record) => {
+        try {
+          const quoteMeta = await fetchQuoteMetadataFromYahoo(record.symbol);
+          await updateWatchSymbolAutoMeta(record.symbol, quoteMeta);
+        } catch (error) {
+          logDevError(
+            `[meta-refresh-error] symbol=${record.symbol} message=${error instanceof Error ? error.message : "unknown error"}`,
+          );
+        }
+      }),
+    );
   }
 
   return metaMap;
@@ -319,7 +354,7 @@ export async function getMatrixPriceData(
   const allDateKeys = Array.from(new Set(priceRows.map((row) => toDateKey(row.tradeDate)))).sort();
   const selectedDateKeys = selectTradeDates(preset, allDateKeys);
 
-  if (selectedDateKeys.length === 0) {
+  if (selectedDateKeys.length === 0 && mode !== "watchlist") {
     warnings.push("no trade-day prices found in selected range");
   }
 
@@ -375,6 +410,12 @@ export async function getMatrixPriceData(
     symbols,
     fromDate: rangeSelection.pullFromDate,
     toDate: rangeSelection.pullToDate,
+    strategy: mode === "watchlist"
+      ? {
+        recentSeedLookbackDays: getMatrixRecentSeedLookbackDays(preset),
+        backfillLookbackDays: getMatrixBackfillLookbackDays(preset),
+      }
+      : undefined,
   });
 
   const from = selectedDateKeys[selectedDateKeys.length - 1] ?? rangeSelection.fallbackFrom;

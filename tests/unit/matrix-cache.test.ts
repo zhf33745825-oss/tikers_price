@@ -178,4 +178,37 @@ describe("getMatrixPriceData cache-first flow", () => {
     expect(payload.rows[0].symbol).toBe("PETR3");
     expect(updateWatchSymbolAutoMetaMock).not.toHaveBeenCalled();
   });
+
+  it("does not return no-trade-day warning for watchlist while async refresh is pending", async () => {
+    const now = new Date();
+
+    listWatchlistMemberRecordsMock.mockResolvedValue([
+      {
+        symbol: "COST",
+        displayName: null,
+        regionOverride: null,
+        autoName: "Costco Wholesale Corporation",
+        autoRegion: "US",
+        autoCurrency: "USD",
+        metaUpdatedAt: now,
+        enabled: true,
+        sortOrder: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    getDailyPriceRowsMock.mockResolvedValue([]);
+    getLatestPriceSnapshotsMock.mockResolvedValue(new Map());
+    getWatchSymbolRecordsBySymbolsMock.mockResolvedValue(new Map());
+
+    const payload = await getMatrixPriceData({
+      mode: "watchlist",
+      preset: "30",
+    });
+
+    expect(payload.warnings).toEqual([]);
+    expect(payload.rows).toHaveLength(1);
+    expect(payload.dates).toEqual([]);
+    expect(scheduleAsyncTailRefreshForSymbolsMock).toHaveBeenCalledTimes(1);
+  });
 });

@@ -36,6 +36,20 @@ describe("buildTailRefreshWindow", () => {
     expect(window?.toDate.toISOString()).toBe("2025-01-10T00:00:00.000Z");
   });
 
+  it("prioritizes recent seed window when configured and symbol has no local data", () => {
+    const window = buildTailRefreshWindow(
+      date("2024-01-01"),
+      date("2025-01-10"),
+      undefined,
+      {
+        recentSeedLookbackDays: 30,
+      },
+    );
+
+    expect(window?.fromDate.toISOString()).toBe("2024-12-12T00:00:00.000Z");
+    expect(window?.toDate.toISOString()).toBe("2025-01-10T00:00:00.000Z");
+  });
+
   it("returns null when local data already covers requested end date", () => {
     const window = buildTailRefreshWindow(
       date("2025-01-01"),
@@ -161,5 +175,63 @@ describe("scheduleAsyncTailRefreshForSymbols", () => {
     await waitForAsyncTailRefreshForTests();
 
     expect(fetchHistoricalFromYahooWithResolutionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("prioritizes a small recent seed window before backfilling older history for empty symbols", async () => {
+    getTradeDateBoundsBySymbolsMock.mockResolvedValue(new Map());
+    fetchHistoricalFromYahooWithResolutionMock
+      .mockResolvedValueOnce({
+        sourceSymbol: "MCD",
+        resolvedSymbol: "MCD",
+        points: [
+          {
+            tradeDate: date("2025-01-18"),
+            close: 300.12,
+            adjClose: 300.12,
+            currency: "USD",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        sourceSymbol: "MCD",
+        resolvedSymbol: "MCD",
+        points: [
+          {
+            tradeDate: date("2024-12-01"),
+            close: 290.12,
+            adjClose: 290.12,
+            currency: "USD",
+          },
+        ],
+      });
+    upsertDailyPricesMock.mockResolvedValue(1);
+
+    scheduleAsyncTailRefreshForSymbols({
+      source: "matrix",
+      symbols: ["MCD"],
+      fromDate: date("2024-01-01"),
+      toDate: date("2025-01-20"),
+      strategy: {
+        recentSeedLookbackDays: 14,
+        backfillLookbackDays: 120,
+      },
+    });
+
+    await waitForAsyncTailRefreshForTests();
+
+    expect(fetchHistoricalFromYahooWithResolutionMock).toHaveBeenCalledTimes(2);
+    expect(fetchHistoricalFromYahooWithResolutionMock).toHaveBeenNthCalledWith(
+      1,
+      "MCD",
+      date("2025-01-07"),
+      date("2025-01-20"),
+    );
+    expect(fetchHistoricalFromYahooWithResolutionMock).toHaveBeenNthCalledWith(
+      2,
+      "MCD",
+      date("2024-09-23"),
+      date("2025-01-06"),
+    );
+    expect(upsertDailyPricesMock).toHaveBeenCalledTimes(2);
   });
 });

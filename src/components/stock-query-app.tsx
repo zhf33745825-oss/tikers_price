@@ -19,7 +19,7 @@ import type {
 const DATE_COL_WIDTH = 96;
 const VIRTUAL_BUFFER_COLS = 8;
 const AUTO_REFRESH_INTERVAL_MS = 2500;
-const AUTO_REFRESH_MAX_ATTEMPTS = 8;
+const AUTO_REFRESH_MAX_ATTEMPTS = 24;
 
 type MatrixLoadSource = "user" | "auto";
 
