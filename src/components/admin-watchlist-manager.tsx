@@ -1,8 +1,10 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  SymbolSuggestion,
+  SymbolSuggestResponse,
   WatchlistItem,
   WatchlistMembersResponse,
   WatchlistSummary,
@@ -13,6 +15,11 @@ interface RowEditState {
   displayName: string;
   regionOverride: string;
 }
+
+const MIN_SYMBOL_QUERY_LENGTH = 2;
+const SYMBOL_SUGGEST_LIMIT = 8;
+const SYMBOL_SUGGEST_DEBOUNCE_MS = 300;
+const SYMBOL_QUERY_PATTERN = /^[A-Z0-9.^=-]+$/;
 
 function formatDateTime(value: string | null): string {
   if (!value) {
@@ -25,6 +32,45 @@ function formatDateTime(value: string | null): string {
 
 function rowEditKey(listId: string | null, symbol: string): string {
   return `${listId ?? "none"}::${symbol}`;
+}
+
+function buildSuggestionLabel(item: SymbolSuggestion): string {
+  const parts = [item.symbol];
+  if (item.name) {
+    parts.push(item.name);
+  }
+  if (item.exchange) {
+    parts.push(item.exchange);
+  }
+  return parts.join(" · ");
+}
+
+export function normalizeSymbolInput(raw: string): string {
+  return raw.trim().toUpperCase();
+}
+
+export function canSubmitSelectedSymbol(
+  rawSymbol: string,
+  selectedSuggestion: SymbolSuggestion | null,
+): boolean {
+  if (!selectedSuggestion) {
+    return false;
+  }
+
+  const normalized = normalizeSymbolInput(rawSymbol);
+  if (!normalized) {
+    return false;
+  }
+
+  return normalized === selectedSuggestion.symbol;
+}
+
+export function isSymbolQueryFormatValid(raw: string): boolean {
+  const normalized = normalizeSymbolInput(raw);
+  if (!normalized) {
+    return true;
+  }
+  return SYMBOL_QUERY_PATTERN.test(normalized);
 }
 
 export function AdminWatchlistManager() {
@@ -48,10 +94,20 @@ export function AdminWatchlistManager() {
   const [listNameDrafts, setListNameDrafts] = useState<Record<string, string>>({});
   const [rowEdits, setRowEdits] = useState<Record<string, RowEditState>>({});
 
+  const [suggestions, setSuggestions] = useState<SymbolSuggestion[]>([]);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [selectedSuggestion, setSelectedSuggestion] = useState<SymbolSuggestion | null>(null);
+  const [symbolInputError, setSymbolInputError] = useState<string | null>(null);
+  const [symbolInputInfo, setSymbolInputInfo] = useState<string | null>(null);
+
+  const suggestAbortRef = useRef<AbortController | null>(null);
+
   const activeList = useMemo(
     () => lists.find((list) => list.id === activeListId) ?? null,
     [activeListId, lists],
   );
+
+  const canSubmitSymbol = canSubmitSelectedSymbol(symbol, selectedSuggestion);
 
   const syncListNameDrafts = (nextLists: WatchlistSummary[]) => {
     setListNameDrafts((prev) => {
@@ -150,6 +206,116 @@ export function AdminWatchlistManager() {
       return next;
     });
   }, [activeListId, items]);
+
+  useEffect(() => {
+    const normalized = normalizeSymbolInput(symbol);
+
+    if (!activeListId || normalized.length === 0) {
+      setSuggestions([]);
+      setSuggestLoading(false);
+      setSymbolInputError(null);
+      setSymbolInputInfo(null);
+      if (suggestAbortRef.current) {
+        suggestAbortRef.current.abort();
+        suggestAbortRef.current = null;
+      }
+      return;
+    }
+
+    if (normalized.length < MIN_SYMBOL_QUERY_LENGTH) {
+      setSuggestions([]);
+      setSuggestLoading(false);
+      setSymbolInputError(null);
+      setSymbolInputInfo(null);
+      if (suggestAbortRef.current) {
+        suggestAbortRef.current.abort();
+        suggestAbortRef.current = null;
+      }
+      return;
+    }
+
+    if (!isSymbolQueryFormatValid(normalized)) {
+      setSuggestions([]);
+      setSuggestLoading(false);
+      setSymbolInputInfo(null);
+      setSymbolInputError("股票代码仅支持字母、数字、点号和连字符");
+      if (suggestAbortRef.current) {
+        suggestAbortRef.current.abort();
+        suggestAbortRef.current = null;
+      }
+      return;
+    }
+
+    const controller = new AbortController();
+    suggestAbortRef.current = controller;
+
+    const timer = setTimeout(() => {
+      setSuggestLoading(true);
+      setSymbolInputError(null);
+      setSymbolInputInfo("正在搜索候选代码...");
+
+      void (async () => {
+        try {
+          const response = await fetch(
+            `/api/admin/watchlists/${encodeURIComponent(activeListId)}/symbols/suggest?q=${encodeURIComponent(normalized)}&limit=${SYMBOL_SUGGEST_LIMIT}`,
+            {
+              signal: controller.signal,
+            },
+          );
+
+          if (controller.signal.aborted) {
+            return;
+          }
+
+          const body = await response.json();
+          if (!response.ok) {
+            setSuggestions([]);
+            setSymbolInputInfo(null);
+            setSymbolInputError(body.error ?? "搜索服务暂不可用，请稍后重试");
+            return;
+          }
+
+          const payload = body as SymbolSuggestResponse;
+          const nextSuggestions = payload.items ?? [];
+          setSuggestions(nextSuggestions);
+
+          if (nextSuggestions.length === 0) {
+            setSymbolInputInfo(null);
+            setSymbolInputError("未找到匹配代码，请检查输入是否正确");
+            return;
+          }
+
+          if (payload.source === "local-fallback") {
+            setSymbolInputInfo("已切换到本地候选，请选择代码后添加。");
+          } else {
+            setSymbolInputInfo(null);
+          }
+          setSymbolInputError(null);
+        } catch (suggestError) {
+          if (controller.signal.aborted) {
+            return;
+          }
+          setSuggestions([]);
+          setSymbolInputInfo(null);
+          setSymbolInputError(
+            suggestError instanceof Error ? suggestError.message : "搜索服务暂不可用，请稍后重试",
+          );
+        } finally {
+          if (!controller.signal.aborted) {
+            setSuggestLoading(false);
+          }
+        }
+      })();
+    }, SYMBOL_SUGGEST_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+      if (suggestAbortRef.current === controller) {
+        suggestAbortRef.current = null;
+      }
+    };
+  }, [activeListId, symbol]);
 
   const setListActionBusy = (key: string, busy: boolean) => {
     setListActionLoading((prev) => ({ ...prev, [key]: busy }));
@@ -270,8 +436,18 @@ export function AdminWatchlistManager() {
       return;
     }
 
+    const selected = selectedSuggestion;
+    if (!selected || !canSubmitSelectedSymbol(symbol, selected)) {
+      setSymbolInputInfo(null);
+      setSymbolInputError("未匹配到有效代码，请从候选中选择后再添加");
+      return;
+    }
+
     setSubmittingSymbol(true);
     setError(null);
+    setSymbolInputError(null);
+    setSymbolInputInfo(null);
+
     try {
       const response = await fetch(`/api/admin/watchlists/${encodeURIComponent(activeListId)}/symbols`, {
         method: "POST",
@@ -279,7 +455,7 @@ export function AdminWatchlistManager() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          symbol,
+          symbol: selected.symbol,
           displayName: displayName || undefined,
           regionOverride: regionOverride || undefined,
         }),
@@ -291,8 +467,12 @@ export function AdminWatchlistManager() {
       }
 
       setSymbol("");
+      setSuggestions([]);
+      setSelectedSuggestion(null);
       setDisplayName("");
       setRegionOverride("");
+      setSymbolInputError(null);
+      setSymbolInputInfo(null);
       await refreshAll(activeListId);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "网络错误");
@@ -427,78 +607,77 @@ export function AdminWatchlistManager() {
 
           {loadingLists ? <p className="subtle">加载清单中...</p> : null}
 
-        {!loadingLists && lists.length === 0 ? (
-          <p className="subtle">暂无清单</p>
-        ) : null}
+          {!loadingLists && lists.length === 0 ? (
+            <p className="subtle">暂无清单</p>
+          ) : null}
 
-        {!loadingLists && lists.length > 0 ? (
-          <div className="table-scroll">
-            <table className="data-table admin-table watchlist-table">
-              <thead>
-                <tr>
-                  <th>当前</th>
-                  <th>清单名称</th>
-                  <th>成员数</th>
-                  <th>默认</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lists.map((list) => (
-                  <tr key={list.id} className={activeListId === list.id ? "selected-list-row" : undefined}>
-                    <td>{activeListId === list.id ? "当前" : "-"}</td>
-                    <td>
-                      <input
-                        value={listNameDrafts[list.id] ?? list.name}
-                        onChange={(event) =>
-                          setListNameDrafts((prev) => ({ ...prev, [list.id]: event.target.value }))}
-                      />
-                    </td>
-                    <td>{list.symbolCount}</td>
-                    <td>{list.isDefault ? "是" : "否"}</td>
-                    <td>
-                      <div className="admin-row-actions">
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => void handleSelectList(list.id)}
-                          disabled={activeListId === list.id}
-                        >
-                          切换
-                        </button>
-                        <button
-                          type="button"
-                          className="primary-button"
-                          onClick={() => void handleRenameList(list.id)}
-                          disabled={Boolean(listActionLoading[`rename:${list.id}`])}
-                        >
-                          {listActionLoading[`rename:${list.id}`] ? "保存中..." : "保存名称"}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => void handleSetDefaultList(list.id)}
-                          disabled={list.isDefault || Boolean(listActionLoading[`default:${list.id}`])}
-                        >
-                          设为默认
-                        </button>
-                        <button
-                          type="button"
-                          className="danger-button"
-                          onClick={() => void handleDeleteList(list.id)}
-                          disabled={Boolean(listActionLoading[`delete:${list.id}`])}
-                        >
-                          {listActionLoading[`delete:${list.id}`] ? "删除中..." : "删除清单"}
-                        </button>
-                      </div>
-                    </td>
+          {!loadingLists && lists.length > 0 ? (
+            <div className="table-scroll">
+              <table className="data-table admin-table watchlist-table">
+                <thead>
+                  <tr>
+                    <th>当前</th>
+                    <th>清单名称</th>
+                    <th>成员数</th>
+                    <th>默认</th>
+                    <th>操作</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-
+                </thead>
+                <tbody>
+                  {lists.map((list) => (
+                    <tr key={list.id} className={activeListId === list.id ? "selected-list-row" : undefined}>
+                      <td>{activeListId === list.id ? "当前" : "-"}</td>
+                      <td>
+                        <input
+                          value={listNameDrafts[list.id] ?? list.name}
+                          onChange={(event) =>
+                            setListNameDrafts((prev) => ({ ...prev, [list.id]: event.target.value }))}
+                        />
+                      </td>
+                      <td>{list.symbolCount}</td>
+                      <td>{list.isDefault ? "是" : "否"}</td>
+                      <td>
+                        <div className="admin-row-actions">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => void handleSelectList(list.id)}
+                            disabled={activeListId === list.id}
+                          >
+                            切换
+                          </button>
+                          <button
+                            type="button"
+                            className="primary-button"
+                            onClick={() => void handleRenameList(list.id)}
+                            disabled={Boolean(listActionLoading[`rename:${list.id}`])}
+                          >
+                            {listActionLoading[`rename:${list.id}`] ? "保存中..." : "保存名称"}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => void handleSetDefaultList(list.id)}
+                            disabled={list.isDefault || Boolean(listActionLoading[`default:${list.id}`])}
+                          >
+                            设为默认
+                          </button>
+                          <button
+                            type="button"
+                            className="danger-button"
+                            onClick={() => void handleDeleteList(list.id)}
+                            disabled={Boolean(listActionLoading[`delete:${list.id}`])}
+                          >
+                            {listActionLoading[`delete:${list.id}`] ? "删除中..." : "删除清单"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </div>
 
         {error ? <p className="error-text">{error}</p> : null}
@@ -510,13 +689,55 @@ export function AdminWatchlistManager() {
         </h3>
 
         <div className="admin-form-grid">
-          <label className="field">
+          <label className="field symbol-field">
             <span>股票代码</span>
             <input
               value={symbol}
-              onChange={(event) => setSymbol(event.target.value)}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setSymbol(nextValue);
+                setSymbolInputError(null);
+                setSymbolInputInfo(null);
+
+                if (selectedSuggestion && normalizeSymbolInput(nextValue) !== selectedSuggestion.symbol) {
+                  setSelectedSuggestion(null);
+                }
+              }}
               placeholder="例如 TSLA 或 600519.SS"
             />
+
+            {suggestLoading ? <p className="symbol-input-feedback subtle">正在搜索候选代码...</p> : null}
+            {!suggestLoading && symbolInputError ? (
+              <p className="symbol-input-feedback error-text">{symbolInputError}</p>
+            ) : null}
+            {!suggestLoading && !symbolInputError && symbolInputInfo ? (
+              <p className="symbol-input-feedback subtle">{symbolInputInfo}</p>
+            ) : null}
+
+            {!suggestLoading && suggestions.length > 0 ? (
+              <ul className="symbol-suggest-list" role="listbox" aria-label="symbol suggestions">
+                {suggestions.map((candidate) => (
+                  <li key={candidate.symbol}>
+                    <button
+                      type="button"
+                      className={`symbol-suggest-item ${selectedSuggestion?.symbol === candidate.symbol ? "selected" : ""}`}
+                      onClick={() => {
+                        setSelectedSuggestion(candidate);
+                        setSymbol(candidate.symbol);
+                        setSuggestions([]);
+                        setSymbolInputError(null);
+                        setSymbolInputInfo(`已选择：${buildSuggestionLabel(candidate)}`);
+                      }}
+                    >
+                      <span className="symbol-suggest-main">{candidate.symbol}</span>
+                      <span className="symbol-suggest-meta">
+                        {[candidate.name, candidate.exchange, candidate.region].filter(Boolean).join(" · ") || "-"}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </label>
 
           <label className="field">
@@ -541,7 +762,8 @@ export function AdminWatchlistManager() {
             type="button"
             className="primary-button"
             onClick={() => void handleCreateSymbol()}
-            disabled={submittingSymbol || !activeListId}
+            disabled={submittingSymbol || !activeListId || !canSubmitSymbol}
+            title={!canSubmitSymbol ? "请选择一个有效候选代码后再添加" : undefined}
           >
             {submittingSymbol ? "提交中..." : "添加到当前清单"}
           </button>
@@ -654,4 +876,3 @@ export function AdminWatchlistManager() {
     </section>
   );
 }
-

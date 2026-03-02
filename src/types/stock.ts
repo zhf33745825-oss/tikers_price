@@ -61,6 +61,19 @@ export interface WatchlistMembersResponse {
   items: WatchlistItem[];
 }
 
+export interface SymbolSuggestion {
+  symbol: string;
+  name: string | null;
+  exchange: string | null;
+  region: string | null;
+  type: string | null;
+}
+
+export interface SymbolSuggestResponse {
+  items: SymbolSuggestion[];
+  source: "yahoo" | "local-fallback";
+}
+
 export interface DailyUpdateResult {
   jobDate: string;
   startedAt: string;

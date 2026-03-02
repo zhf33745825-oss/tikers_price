@@ -7,6 +7,7 @@ import {
   fetchQuoteMetadataFromYahoo,
   resetYahooRelayPreferenceForTests,
   resolveSymbolForYahoo,
+  searchSymbolCandidatesFromYahoo,
 } from "@/lib/stock/yahoo";
 
 type MockResponseInput = {
@@ -240,5 +241,69 @@ describe("yahoo chart adapter", () => {
     await expect(
       fetchHistoricalFromYahoo("AAPL", date("2025-01-01"), date("2025-01-10")),
     ).rejects.toThrow(/Yahoo source unavailable/);
+  });
+
+  it("parses and ranks yahoo search suggestions", async () => {
+    mockFetchSequence([
+      {
+        status: 200,
+        body: {
+          quotes: [
+            {
+              symbol: "TSLA",
+              quoteType: "EQUITY",
+              typeDisp: "Equity",
+              longname: "Tesla, Inc.",
+              exchDisp: "NASDAQ",
+            },
+            {
+              symbol: "^IXIC",
+              quoteType: "INDEX",
+              typeDisp: "Index",
+              shortname: "NASDAQ Composite",
+              exchDisp: "NASDAQ",
+            },
+            {
+              symbol: "TSLAX",
+              quoteType: "MUTUALFUND",
+              typeDisp: "Mutual Fund",
+              longname: "Example Fund",
+              exchDisp: "NMFQS",
+            },
+            {
+              symbol: "TSLA",
+              quoteType: "EQUITY",
+              typeDisp: "Equity",
+              longname: "Tesla Duplicate",
+              exchDisp: "NASDAQ",
+            },
+          ],
+        },
+      },
+    ]);
+
+    const suggestions = await searchSymbolCandidatesFromYahoo("TS", 3);
+    expect(suggestions).toHaveLength(3);
+    expect(suggestions[0]?.symbol).toBe("TSLA");
+    expect(suggestions[0]?.type).toBe("Equity");
+    expect(suggestions.map((item) => item.symbol)).toEqual(["TSLA", "^IXIC", "TSLAX"]);
+  });
+
+  it("falls back to relay endpoint for yahoo search when direct endpoint is blocked", async () => {
+    const fetchMock = mockFetchSequence([
+      {
+        status: 403,
+        body: "<html><body>blocked</body></html>",
+      },
+      {
+        status: 200,
+        body: `Title:\n\nURL Source: http://query2.finance.yahoo.com/v1/finance/search\n\nMarkdown Content:\n{"quotes":[{"symbol":"AAPL","quoteType":"EQUITY","typeDisp":"Equity","longname":"Apple Inc.","exchDisp":"NASDAQ"}]}`,
+      },
+    ]);
+
+    const suggestions = await searchSymbolCandidatesFromYahoo("AAP", 8);
+    expect(suggestions[0]?.symbol).toBe("AAPL");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toContain("r.jina.ai/http://query2.finance.yahoo.com");
   });
 });

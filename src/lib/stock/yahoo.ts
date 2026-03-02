@@ -1,6 +1,7 @@
 import { parseDateKeyToDate, toDateKey } from "@/lib/stock/dates";
 import { normalizeYahooErrorMessage } from "@/lib/stock/errors";
 import { inferRegionFromExchange, inferRegionFromSymbol } from "@/lib/stock/region";
+import type { SymbolSuggestion } from "@/types/stock";
 
 interface YahooChartMeta {
   symbol?: string;
@@ -42,6 +43,20 @@ interface YahooChartResponse {
   };
 }
 
+interface YahooSearchQuote {
+  symbol?: string;
+  shortname?: string;
+  longname?: string;
+  exchDisp?: string;
+  exchange?: string;
+  quoteType?: string;
+  typeDisp?: string;
+}
+
+interface YahooSearchResponse {
+  quotes?: YahooSearchQuote[];
+}
+
 interface ChartRequestParams {
   interval: "1d";
   period1?: number;
@@ -62,11 +77,13 @@ interface CandidateFetchFailure {
 }
 
 const YAHOO_CHART_ENDPOINT = "https://query2.finance.yahoo.com/v8/finance/chart";
+const YAHOO_SEARCH_ENDPOINT = "https://query2.finance.yahoo.com/v1/finance/search";
 const YAHOO_CHART_RELAY_PREFIX = "https://r.jina.ai/http://";
 const YAHOO_FETCH_TIMEOUT_MS = 15_000;
 const YAHOO_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 let preferRelayForYahooChart = false;
+let preferRelayForYahooSearch = false;
 
 function throwYahooError(error: unknown): never {
   throw new Error(normalizeYahooErrorMessage(error));
@@ -144,6 +161,17 @@ function buildChartRequestUrl(symbol: string, params: ChartRequestParams): strin
 function toRelayChartUrl(primaryUrl: string): string {
   const withoutProtocol = primaryUrl.replace(/^https?:\/\//i, "");
   return `${YAHOO_CHART_RELAY_PREFIX}${withoutProtocol}`;
+}
+
+function buildSearchRequestUrl(query: string, limit: number): string {
+  const searchParams = new URLSearchParams();
+  searchParams.set("q", query);
+  searchParams.set("quotesCount", String(limit));
+  searchParams.set("newsCount", "0");
+  searchParams.set("enableFuzzyQuery", "true");
+  searchParams.set("lang", "en-US");
+  searchParams.set("region", "US");
+  return `${YAHOO_SEARCH_ENDPOINT}?${searchParams.toString()}`;
 }
 
 function looksLikeHtmlPayload(input: string): boolean {
@@ -319,6 +347,143 @@ export function buildYahooSymbolCandidates(symbol: string): string[] {
 
 export function resetYahooRelayPreferenceForTests(): void {
   preferRelayForYahooChart = false;
+  preferRelayForYahooSearch = false;
+}
+
+function sanitizeSuggestionText(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function suggestionTypeRank(quoteType: string | null): number {
+  const normalized = (quoteType ?? "").toUpperCase();
+  if (normalized === "EQUITY") {
+    return 0;
+  }
+  if (normalized === "ETF") {
+    return 1;
+  }
+  if (normalized === "INDEX") {
+    return 2;
+  }
+  return 3;
+}
+
+function toSymbolSuggestion(
+  quote: YahooSearchQuote,
+): SymbolSuggestion | null {
+  const symbol = sanitizeSuggestionText(quote.symbol)?.toUpperCase() ?? null;
+  if (!symbol) {
+    return null;
+  }
+
+  const exchange = sanitizeSuggestionText(quote.exchDisp) ?? sanitizeSuggestionText(quote.exchange);
+  const type = sanitizeSuggestionText(quote.typeDisp) ?? sanitizeSuggestionText(quote.quoteType);
+  const name = sanitizeSuggestionText(quote.longname) ?? sanitizeSuggestionText(quote.shortname);
+  const region = exchange
+    ? inferRegionFromExchange(exchange, symbol)
+    : inferRegionFromSymbol(symbol);
+
+  return {
+    symbol,
+    name,
+    exchange,
+    region,
+    type,
+  };
+}
+
+function parseSearchSuggestions(
+  payload: YahooSearchResponse,
+  query: string,
+  limit: number,
+): SymbolSuggestion[] {
+  const normalizedQuery = query.trim().toUpperCase();
+  const suggestions = (payload.quotes ?? [])
+    .map((quote) => toSymbolSuggestion(quote))
+    .filter((item): item is SymbolSuggestion => item !== null);
+
+  const seen = new Set<string>();
+  const deduped = suggestions.filter((item) => {
+    if (seen.has(item.symbol)) {
+      return false;
+    }
+    seen.add(item.symbol);
+    return true;
+  });
+
+  deduped.sort((a, b) => {
+    const rankDelta = suggestionTypeRank(a.type) - suggestionTypeRank(b.type);
+    if (rankDelta !== 0) {
+      return rankDelta;
+    }
+    const aStarts = a.symbol.startsWith(normalizedQuery) ? 0 : 1;
+    const bStarts = b.symbol.startsWith(normalizedQuery) ? 0 : 1;
+    if (aStarts !== bStarts) {
+      return aStarts - bStarts;
+    }
+    return a.symbol.localeCompare(b.symbol);
+  });
+
+  return deduped.slice(0, Math.max(1, Math.min(20, Math.floor(limit))));
+}
+
+export async function searchSymbolCandidatesFromYahoo(
+  query: string,
+  limit: number,
+): Promise<SymbolSuggestion[]> {
+  const safeLimit = Math.max(1, Math.min(20, Math.floor(limit)));
+  const requestUrl = buildSearchRequestUrl(query.trim(), Math.max(safeLimit * 3, 8));
+  let response = preferRelayForYahooSearch
+    ? await fetchChartResponseText(toRelayChartUrl(requestUrl), true)
+    : await fetchChartResponseText(requestUrl);
+
+  if (!preferRelayForYahooSearch && (response.status < 200 || response.status >= 300)) {
+    if (shouldRetryViaRelay(response.status, response.body)) {
+      preferRelayForYahooSearch = true;
+      response = await fetchChartResponseText(toRelayChartUrl(requestUrl), true);
+    }
+  }
+
+  if (response.status < 200 || response.status >= 300) {
+    throwYahooError(
+      new Error(
+        formatCandidateFailure(
+          `Yahoo search request failed (${query}) status ${response.status} ${response.statusText}: ${response.body}`,
+        ),
+      ),
+    );
+  }
+
+  let responseBody = extractRelayJsonText(response.body);
+
+  if (!preferRelayForYahooSearch && looksLikeHtmlPayload(responseBody)) {
+    preferRelayForYahooSearch = true;
+    response = await fetchChartResponseText(toRelayChartUrl(requestUrl), true);
+    responseBody = extractRelayJsonText(response.body);
+  }
+
+  if (looksLikeHtmlPayload(responseBody)) {
+    throwYahooError(
+      new Error(formatCandidateFailure(`Yahoo search returned HTML response (${query}): ${responseBody}`)),
+    );
+  }
+
+  let payload: YahooSearchResponse;
+  try {
+    payload = JSON.parse(responseBody) as YahooSearchResponse;
+  } catch {
+    throwYahooError(
+      new Error(
+        formatCandidateFailure(`Yahoo search returned non-JSON response (${query}): ${responseBody}`),
+      ),
+    );
+  }
+
+  return parseSearchSuggestions(payload, query, safeLimit);
 }
 
 async function resolveYahooChartResult(

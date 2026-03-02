@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { InputError } from "@/lib/stock/errors";
-import { parseSymbolsInput, validateSingleSymbol } from "@/lib/stock/symbols";
+import { parseSymbolsInput, validateSingleSymbol, validateSymbolQuery } from "@/lib/stock/symbols";
 
 describe("symbols parser", () => {
   it("parses symbols separated by commas spaces and newlines", () => {
@@ -22,5 +22,15 @@ describe("symbols parser", () => {
   it("throws for invalid symbol", () => {
     expect(() => validateSingleSymbol("AAPL$")).toThrow(InputError);
   });
-});
 
+  it("validates symbol query for suggest API", () => {
+    expect(validateSymbolQuery("ts")).toBe("TS");
+    expect(validateSymbolQuery("0700.hk")).toBe("0700.HK");
+  });
+
+  it("throws for invalid suggest query", () => {
+    expect(() => validateSymbolQuery("A")).toThrow(InputError);
+    expect(() => validateSymbolQuery("te sla")).toThrow(InputError);
+    expect(() => validateSymbolQuery("ABC@@")).toThrow(InputError);
+  });
+});

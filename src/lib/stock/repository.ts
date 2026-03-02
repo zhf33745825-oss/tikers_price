@@ -12,6 +12,7 @@ import { InputError } from "@/lib/stock/errors";
 import { inferRegionFromSymbol } from "@/lib/stock/region";
 import type {
   DailyUpdateResult,
+  SymbolSuggestion,
   SymbolSeries,
   WatchlistItem,
   WatchlistSummary,
@@ -165,6 +166,16 @@ function toWatchlistSummary(record: WatchlistSummaryRecord): WatchlistSummary {
     symbolCount: record.symbolCount,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
+  };
+}
+
+function toLocalSymbolSuggestion(record: WatchSymbolRecord): SymbolSuggestion {
+  return {
+    symbol: record.symbol,
+    name: resolveName(record),
+    exchange: null,
+    region: resolveRegion(record),
+    type: "LOCAL",
   };
 }
 
@@ -628,6 +639,51 @@ export async function getWatchSymbolRecordsBySymbols(
   });
 
   return new Map(rows.map((row) => [row.symbol, toWatchSymbolRecord(row)]));
+}
+
+export async function searchLocalWatchSymbols(
+  query: string,
+  limit: number,
+): Promise<SymbolSuggestion[]> {
+  const normalizedQuery = query.trim().toUpperCase();
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const safeLimit = Math.max(1, Math.min(20, Math.floor(limit)));
+  const candidateRows = await prisma.watchSymbol.findMany({
+    where: {
+      OR: [
+        { symbol: { contains: normalizedQuery } },
+        { displayName: { contains: query.trim() } },
+        { autoName: { contains: query.trim() } },
+      ],
+    },
+    take: safeLimit * 4,
+    orderBy: [{ updatedAt: "desc" }],
+  });
+
+  const seen = new Set<string>();
+  const ranked = candidateRows
+    .map((row) => toWatchSymbolRecord(row))
+    .filter((row) => {
+      if (seen.has(row.symbol)) {
+        return false;
+      }
+      seen.add(row.symbol);
+      return true;
+    })
+    .sort((a, b) => {
+      const aStarts = a.symbol.startsWith(normalizedQuery) ? 0 : 1;
+      const bStarts = b.symbol.startsWith(normalizedQuery) ? 0 : 1;
+      if (aStarts !== bStarts) {
+        return aStarts - bStarts;
+      }
+      return a.symbol.localeCompare(b.symbol);
+    })
+    .slice(0, safeLimit);
+
+  return ranked.map(toLocalSymbolSuggestion);
 }
 
 export async function addSymbolToWatchlist(

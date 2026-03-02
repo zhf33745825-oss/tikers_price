@@ -12,6 +12,14 @@ const singleSymbolSchema = z
   .min(1, "symbol is required")
   .max(20, "symbol length cannot exceed 20");
 
+const symbolQuerySchema = z
+  .string()
+  .trim()
+  .min(2, "query length must be at least 2")
+  .max(20, "query length cannot exceed 20");
+
+const SYMBOL_QUERY_PATTERN = /^[A-Z0-9.^=-]+$/;
+
 function normalizeSymbol(symbol: string): string {
   return symbol.trim().toUpperCase();
 }
@@ -29,6 +37,20 @@ export function validateSingleSymbol(rawSymbol: string): string {
   }
 
   return symbol;
+}
+
+export function validateSymbolQuery(rawQuery: string): string {
+  const parsedResult = symbolQuerySchema.safeParse(rawQuery);
+  if (!parsedResult.success) {
+    throw new InputError(parsedResult.error.issues[0]?.message ?? "invalid query");
+  }
+
+  const query = normalizeSymbol(parsedResult.data);
+  if (!SYMBOL_QUERY_PATTERN.test(query)) {
+    throw new InputError(`invalid query format: ${query}`);
+  }
+
+  return query;
 }
 
 export function parseSymbolsInput(
@@ -58,4 +80,3 @@ export function parseSymbolsInput(
 
   return deduped;
 }
-
