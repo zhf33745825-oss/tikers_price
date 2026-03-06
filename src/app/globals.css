@@ -756,6 +756,36 @@ a {
   z-index: 8;
 }
 
+.watchlist-excel-table tbody tr:nth-child(odd) td {
+  background: #ffffff;
+}
+
+.watchlist-excel-table tbody tr:nth-child(even) td {
+  background: #e8f1ff;
+}
+
+.watchlist-excel-table
+  tbody
+  tr:not(.watchlist-row-dragging):not(.watchlist-row-drop-before):not(.watchlist-row-drop-after):hover
+  td {
+  background: #dbeafe;
+}
+
+.watchlist-excel-table tbody tr:nth-child(odd) .sticky-cell {
+  background: #ffffff;
+}
+
+.watchlist-excel-table tbody tr:nth-child(even) .sticky-cell {
+  background: #e8f1ff;
+}
+
+.watchlist-excel-table
+  tbody
+  tr:not(.watchlist-row-dragging):not(.watchlist-row-drop-before):not(.watchlist-row-drop-after):hover
+  .sticky-cell {
+  background: #dbeafe;
+}
+
 .row-index-wrap {
   display: inline-flex;
   align-items: center;
