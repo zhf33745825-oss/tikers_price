@@ -1,7 +1,14 @@
 ﻿"use client";
 
 import dayjs from "dayjs";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type DragEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   hasAutoRefreshTimedOut,
@@ -425,7 +432,8 @@ function createInsertedEmptyDraftRow(): DraftRow {
 
 function withSingleTailPlaceholder(rows: DraftRow[]): DraftRow[] {
   const baseRows = rows.filter((row) => !row.isPlaceholder);
-  return [...baseRows, createEmptyDraftRow()];
+  const tailPlaceholder = rows.find((row) => row.isPlaceholder) ?? createEmptyDraftRow();
+  return [...baseRows, tailPlaceholder];
 }
 
 export function insertDraftRowAtTarget(
@@ -440,7 +448,39 @@ export function insertDraftRowAtTarget(
     : (position === "before" ? targetIndex : targetIndex + 1);
   const nextRows = [...baseRows];
   nextRows.splice(insertAt, 0, createInsertedEmptyDraftRow());
-  return [...nextRows, createEmptyDraftRow()];
+  return withSingleTailPlaceholder([...nextRows, ...rows.filter((row) => row.isPlaceholder)]);
+}
+
+export function reorderDraftRowsByDrop(
+  rows: DraftRow[],
+  draggingRowId: string,
+  targetRowId: string,
+  position: "before" | "after",
+): DraftRow[] {
+  if (!draggingRowId || !targetRowId || draggingRowId === targetRowId) {
+    return rows;
+  }
+
+  const baseRows = rows.filter((row) => !row.isPlaceholder);
+  const sourceIndex = baseRows.findIndex((row) => row.id === draggingRowId);
+  const targetIndex = baseRows.findIndex((row) => row.id === targetRowId);
+  if (sourceIndex === -1 || targetIndex === -1) {
+    return rows;
+  }
+
+  const movingRow = baseRows[sourceIndex];
+  if (!movingRow) {
+    return rows;
+  }
+
+  const reordered = [...baseRows];
+  reordered.splice(sourceIndex, 1);
+  let insertIndex = position === "before" ? targetIndex : targetIndex + 1;
+  if (sourceIndex < insertIndex) {
+    insertIndex -= 1;
+  }
+  reordered.splice(insertIndex, 0, movingRow);
+  return withSingleTailPlaceholder([...reordered, ...rows.filter((row) => row.isPlaceholder)]);
 }
 
 function getStatusLabel(status: DraftStatus): string {
@@ -551,6 +591,9 @@ export function WatchlistExcelManager() {
   const [autoRefreshAttempts, setAutoRefreshAttempts] = useState(0);
   const [pendingSymbols, setPendingSymbols] = useState<string[]>([]);
   const [autoRefreshTimedOut, setAutoRefreshTimedOut] = useState(false);
+  const [draggingRowId, setDraggingRowId] = useState<string | null>(null);
+  const [dropTargetRowId, setDropTargetRowId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<"before" | "after" | null>(null);
   const [contextMenu, setContextMenu] = useState<RowContextMenuState>({
     open: false,
     rowId: null,
@@ -669,6 +712,47 @@ export function WatchlistExcelManager() {
     setRowsAndRef((previous) => insertDraftRowAtTarget(previous, rowId, position));
     closeRowContextMenu();
   }, [closeRowContextMenu, setRowsAndRef]);
+
+  const clearDragState = useCallback(() => {
+    setDraggingRowId(null);
+    setDropTargetRowId(null);
+    setDropPosition(null);
+  }, []);
+
+  const handleDragStart = useCallback((event: DragEvent<HTMLButtonElement>, rowId: string) => {
+    if (autoSaving || matrixLoading) {
+      event.preventDefault();
+      return;
+    }
+    event.stopPropagation();
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", rowId);
+    setDraggingRowId(rowId);
+    setDropTargetRowId(null);
+    setDropPosition(null);
+    closeRowContextMenu();
+  }, [autoSaving, closeRowContextMenu, matrixLoading]);
+
+  const handleRowDragOver = useCallback((
+    event: DragEvent<HTMLTableRowElement>,
+    targetRowId: string,
+  ) => {
+    if (!draggingRowId) {
+      return;
+    }
+    if (targetRowId === draggingRowId) {
+      setDropTargetRowId(null);
+      setDropPosition(null);
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const rect = event.currentTarget.getBoundingClientRect();
+    const nextDropPosition: "before" | "after" =
+      event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+    setDropTargetRowId(targetRowId);
+    setDropPosition(nextDropPosition);
+  }, [draggingRowId]);
 
   useEffect(() => {
     activeListIdRef.current = activeListId;
@@ -1451,6 +1535,41 @@ export function WatchlistExcelManager() {
     }
   }, [refreshCurrentList]);
 
+  const handleRowDrop = useCallback(async (
+    event: DragEvent<HTMLTableRowElement>,
+    targetRowId: string,
+  ) => {
+    event.preventDefault();
+    if (!draggingRowId || !dropPosition) {
+      clearDragState();
+      return;
+    }
+
+    let moved = false;
+    setRowsAndRef((previous) => {
+      const beforeSignature = previous
+        .filter((row) => !row.isPlaceholder)
+        .map((row) => row.id)
+        .join("|");
+      const nextRows = reorderDraftRowsByDrop(previous, draggingRowId, targetRowId, dropPosition);
+      const afterSignature = nextRows
+        .filter((row) => !row.isPlaceholder)
+        .map((row) => row.id)
+        .join("|");
+      moved = beforeSignature !== afterSignature;
+      return nextRows;
+    });
+
+    clearDragState();
+    if (moved) {
+      await autoSave();
+    }
+  }, [autoSave, clearDragState, draggingRowId, dropPosition, setRowsAndRef]);
+
+  const handleDragEnd = useCallback(() => {
+    clearDragState();
+  }, [clearDragState]);
+
   const validateAndMaybeSaveRow = useCallback(async (rowId: string) => {
     const source = rowsRef.current.find((row) => row.id === rowId);
     if (!source) {
@@ -1578,6 +1697,8 @@ export function WatchlistExcelManager() {
 
   const handleSwitchWatchlist = async (listId: string) => {
     clearAllSuggestTimers();
+    clearDragState();
+    closeRowContextMenu();
     setActiveSuggestRowId(null);
     setBulkImportText("");
     setActiveListId(listId);
@@ -1969,6 +2090,14 @@ export function WatchlistExcelManager() {
                 const normalized = normalizeDraftSymbol(row.input);
                 const symbolForView = row.selectedSymbol ?? normalized;
                 const matrixRow = symbolForView ? matrixMap.get(symbolForView) : undefined;
+                const rowIsDraggable = Boolean(normalized) && !row.isPlaceholder;
+                const isDraggingRow = draggingRowId === row.id;
+                const isDropTarget = dropTargetRowId === row.id;
+                const rowClassName = [
+                  isDraggingRow ? "watchlist-row-dragging" : "",
+                  isDropTarget && dropPosition === "before" ? "watchlist-row-drop-before" : "",
+                  isDropTarget && dropPosition === "after" ? "watchlist-row-drop-after" : "",
+                ].filter(Boolean).join(" ");
 
                 const displayName = matrixRow?.name ?? row.selectedSuggestion?.name ?? "-";
                 const displayRegion = matrixRow?.region ?? row.selectedSuggestion?.region ?? "-";
@@ -1977,12 +2106,35 @@ export function WatchlistExcelManager() {
                 return (
                   <tr
                     key={row.id}
+                    className={rowClassName || undefined}
                     onContextMenu={(event) => {
                       event.preventDefault();
                       openRowContextMenu(row.id, event.clientX, event.clientY);
                     }}
+                    onDragOver={rowIsDraggable
+                      ? (event) => handleRowDragOver(event, row.id)
+                      : undefined}
+                    onDrop={rowIsDraggable
+                      ? (event) => void handleRowDrop(event, row.id)
+                      : undefined}
                   >
-                    <td className="sticky-cell sticky-index-col">{index + 1}</td>
+                    <td className="sticky-cell sticky-index-col">
+                      <div className="row-index-wrap">
+                        <button
+                          type="button"
+                          className="row-drag-handle"
+                          draggable={rowIsDraggable && !autoSaving && !matrixLoading}
+                          onDragStart={(event) => handleDragStart(event, row.id)}
+                          onDragEnd={handleDragEnd}
+                          disabled={!rowIsDraggable || autoSaving || matrixLoading}
+                          aria-label="拖拽调整行顺序"
+                          title={rowIsDraggable ? "拖拽调整顺序" : "空行不可拖拽"}
+                        >
+                          ⋮⋮
+                        </button>
+                        <span>{index + 1}</span>
+                      </div>
+                    </td>
                     <td className="sticky-cell sticky-symbol-col">
                       <div className="symbol-field">
                         <input

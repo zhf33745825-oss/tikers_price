@@ -5,6 +5,7 @@ import {
   normalizeDraftSymbol,
   parseSymbolsFromBulkImportInput,
   parseSymbolsFromExcelInput,
+  reorderDraftRowsByDrop,
   validateRowsBeforeSync,
 } from "@/components/watchlist-excel-manager";
 
@@ -167,5 +168,147 @@ describe("watchlist excel manager helpers", () => {
     expect(inserted).toHaveLength(3);
     expect(inserted[1]?.isPlaceholder).toBe(false);
     expect(inserted[2]?.isPlaceholder).toBe(true);
+  });
+
+  it("reorders rows to target before position and keeps one tail placeholder", () => {
+    const rows: Parameters<typeof reorderDraftRowsByDrop>[0] = [
+      {
+        id: "row-1",
+        input: "TSLA",
+        normalized: "TSLA",
+        persistedSymbol: "TSLA",
+        selectedSymbol: "TSLA",
+        selectedSuggestion: null,
+        suggestions: [],
+        status: "saved",
+        message: "",
+        persisted: true,
+        isPlaceholder: false,
+      },
+      {
+        id: "row-2",
+        input: "AAPL",
+        normalized: "AAPL",
+        persistedSymbol: "AAPL",
+        selectedSymbol: "AAPL",
+        selectedSuggestion: null,
+        suggestions: [],
+        status: "saved",
+        message: "",
+        persisted: true,
+        isPlaceholder: false,
+      },
+      {
+        id: "row-3",
+        input: "MSFT",
+        normalized: "MSFT",
+        persistedSymbol: "MSFT",
+        selectedSymbol: "MSFT",
+        selectedSuggestion: null,
+        suggestions: [],
+        status: "saved",
+        message: "",
+        persisted: true,
+        isPlaceholder: false,
+      },
+      {
+        id: "placeholder",
+        input: "",
+        normalized: "",
+        persistedSymbol: null,
+        selectedSymbol: null,
+        selectedSuggestion: null,
+        suggestions: [],
+        status: "idle",
+        message: "请输入代码",
+        persisted: false,
+        isPlaceholder: true,
+      },
+    ];
+
+    const reordered = reorderDraftRowsByDrop(rows, "row-3", "row-1", "before");
+    expect(reordered.map((item) => item.id)).toEqual(["row-3", "row-1", "row-2", "placeholder"]);
+    expect(reordered[3]?.isPlaceholder).toBe(true);
+  });
+
+  it("reorders rows to target after position", () => {
+    const rows: Parameters<typeof reorderDraftRowsByDrop>[0] = [
+      {
+        id: "row-1",
+        input: "TSLA",
+        normalized: "TSLA",
+        persistedSymbol: "TSLA",
+        selectedSymbol: "TSLA",
+        selectedSuggestion: null,
+        suggestions: [],
+        status: "saved",
+        message: "",
+        persisted: true,
+        isPlaceholder: false,
+      },
+      {
+        id: "row-2",
+        input: "AAPL",
+        normalized: "AAPL",
+        persistedSymbol: "AAPL",
+        selectedSymbol: "AAPL",
+        selectedSuggestion: null,
+        suggestions: [],
+        status: "saved",
+        message: "",
+        persisted: true,
+        isPlaceholder: false,
+      },
+      {
+        id: "placeholder",
+        input: "",
+        normalized: "",
+        persistedSymbol: null,
+        selectedSymbol: null,
+        selectedSuggestion: null,
+        suggestions: [],
+        status: "idle",
+        message: "请输入代码",
+        persisted: false,
+        isPlaceholder: true,
+      },
+    ];
+
+    const reordered = reorderDraftRowsByDrop(rows, "row-1", "row-2", "after");
+    expect(reordered.map((item) => item.id)).toEqual(["row-2", "row-1", "placeholder"]);
+  });
+
+  it("returns original rows when target is invalid", () => {
+    const rows: Parameters<typeof reorderDraftRowsByDrop>[0] = [
+      {
+        id: "row-1",
+        input: "TSLA",
+        normalized: "TSLA",
+        persistedSymbol: "TSLA",
+        selectedSymbol: "TSLA",
+        selectedSuggestion: null,
+        suggestions: [],
+        status: "saved",
+        message: "",
+        persisted: true,
+        isPlaceholder: false,
+      },
+      {
+        id: "placeholder",
+        input: "",
+        normalized: "",
+        persistedSymbol: null,
+        selectedSymbol: null,
+        selectedSuggestion: null,
+        suggestions: [],
+        status: "idle",
+        message: "请输入代码",
+        persisted: false,
+        isPlaceholder: true,
+      },
+    ];
+
+    const reordered = reorderDraftRowsByDrop(rows, "row-1", "missing-row", "before");
+    expect(reordered).toBe(rows);
   });
 });
