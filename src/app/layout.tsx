@@ -1,5 +1,4 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+﻿import type { Metadata } from "next";
 
 import "./globals.css";
 
@@ -22,10 +21,6 @@ export default function RootLayout({
               <h1>股票历史收盘价矩阵</h1>
               <p>Yahoo Finance 数据源 | 多股票历史收盘价 | 每日自动更新</p>
             </div>
-            <nav className="app-nav">
-              <Link href="/">首页矩阵</Link>
-              <Link href="/admin/watchlist">自选清单管理</Link>
-            </nav>
           </header>
 
           <main className="app-main">{children}</main>
