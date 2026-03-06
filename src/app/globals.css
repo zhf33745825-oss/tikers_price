@@ -565,16 +565,37 @@ a {
 }
 
 .excel-manager-topbar {
-  margin-top: 12px;
+  margin-top: 4px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-  gap: 12px;
+  gap: 8px;
+}
+
+.excel-top-context {
+  display: grid;
+  gap: 4px;
+}
+
+.excel-list-actions-row {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: minmax(260px, 420px) max-content max-content;
+  gap: 10px;
   align-items: end;
 }
 
-.excel-create-list {
-  display: grid;
-  gap: 8px;
+.excel-list-name-field {
+  min-width: 0;
+}
+
+.excel-list-actions-row .primary-button,
+.excel-list-actions-row .danger-button {
+  min-width: 0;
+  width: fit-content;
+  justify-self: start;
+  height: 36px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
 }
 
 .excel-actions {
@@ -852,7 +873,17 @@ a {
   }
 
   .excel-manager-topbar {
+    gap: 6px;
+  }
+
+  .excel-list-actions-row {
     grid-template-columns: 1fr;
+  }
+
+  .excel-list-actions-row .primary-button,
+  .excel-list-actions-row .danger-button {
+    width: fit-content;
+    justify-self: start;
   }
 
   .excel-paste-row {

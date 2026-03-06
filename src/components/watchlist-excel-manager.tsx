@@ -1876,12 +1876,8 @@ export function WatchlistExcelManager() {
   return (
     <section className="content-section">
       <div className="panel">
-        <h2 className="panel-title">股票代码管理矩阵（实验页）</h2>
-        <p className="subtle">只需要编辑第一列代码；名称/地区/币种/价格列保持自动生成。</p>
-
         <div className="excel-manager-topbar">
-          <div>
-            <p className="subtle">模式：自选清单 | 当前清单：{activeWatchlist?.name ?? "-"}</p>
+          <div className="excel-top-context">
             {watchlistsLoading ? (
               <p className="subtle">加载清单中...</p>
             ) : (
@@ -1900,42 +1896,42 @@ export function WatchlistExcelManager() {
               </div>
             )}
           </div>
+        </div>
 
-          <div className="excel-create-list">
-            <label className="field">
-              <span>新增清单</span>
-              <input
-                value={newListName}
-                onChange={(event) => setNewListName(event.target.value)}
-                placeholder="例如 观察清单"
-                disabled={autoSaving || matrixLoading}
-              />
-            </label>
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() => void handleCreateWatchlist()}
-              disabled={creatingList || deletingList || autoSaving || matrixLoading}
-            >
-              {creatingList ? "创建中..." : "新增清单"}
-            </button>
-            <button
-              type="button"
-              className="danger-button"
-              onClick={() => void handleDeleteCurrentWatchlist()}
-              disabled={
-                deletingList
-                || creatingList
-                || autoSaving
-                || matrixLoading
-                || !activeWatchlist
-                || watchlists.length <= 1
-              }
-              title={watchlists.length <= 1 ? "至少保留一个清单，无法删除" : undefined}
-            >
-              {deletingList ? "删除中..." : "删除当前清单"}
-            </button>
-          </div>
+        <div className="excel-list-actions-row">
+          <label className="field excel-list-name-field">
+            <span>新增清单</span>
+            <input
+              value={newListName}
+              onChange={(event) => setNewListName(event.target.value)}
+              placeholder="例如 观察清单"
+              disabled={autoSaving || matrixLoading}
+            />
+          </label>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => void handleCreateWatchlist()}
+            disabled={creatingList || deletingList || autoSaving || matrixLoading}
+          >
+            {creatingList ? "创建中..." : "新增清单"}
+          </button>
+          <button
+            type="button"
+            className="danger-button"
+            onClick={() => void handleDeleteCurrentWatchlist()}
+            disabled={
+              deletingList
+              || creatingList
+              || autoSaving
+              || matrixLoading
+              || !activeWatchlist
+              || watchlists.length <= 1
+            }
+            title={watchlists.length <= 1 ? "至少保留一个清单，无法删除" : undefined}
+          >
+            {deletingList ? "删除中..." : "删除当前清单"}
+          </button>
         </div>
 
         <div className="excel-actions">
