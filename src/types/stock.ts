@@ -74,6 +74,27 @@ export interface SymbolSuggestResponse {
   source: "yahoo" | "local-fallback";
 }
 
+export type ImportPreviewStatus =
+  | "matched"
+  | "needs_choice"
+  | "invalid_format"
+  | "no_match"
+  | "duplicate_in_batch"
+  | "already_in_list";
+
+export interface ImportPreviewRow {
+  input: string;
+  normalized: string;
+  status: ImportPreviewStatus;
+  message: string;
+  resolvedSymbol: string | null;
+  candidates: SymbolSuggestion[];
+}
+
+export interface ImportPreviewResponse {
+  items: ImportPreviewRow[];
+}
+
 export interface DailyUpdateResult {
   jobDate: string;
   startedAt: string;

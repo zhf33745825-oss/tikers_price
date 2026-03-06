@@ -34,6 +34,7 @@ export interface MatrixQueryInput {
   to?: string | null;
   symbols?: string | null;
   listId?: string | null;
+  forceRefresh?: boolean;
 }
 
 interface RangeSelection {
@@ -408,6 +409,7 @@ export async function getMatrixPriceData(
   scheduleAsyncTailRefreshForSymbols({
     source: "matrix",
     symbols,
+    force: Boolean(input.forceRefresh),
     fromDate: rangeSelection.pullFromDate,
     toDate: rangeSelection.pullToDate,
     strategy: mode === "watchlist"

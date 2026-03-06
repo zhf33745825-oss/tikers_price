@@ -8,6 +8,8 @@ import { fetchHistoricalFromYahooWithResolution } from "@/lib/stock/yahoo";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
+const EMPTY_SEED_RESULT_RETRY_COOLDOWN_MS = 2 * 60 * 1000;
+const FAILED_REFRESH_RETRY_COOLDOWN_MS = 30 * 1000;
 
 export interface TailRefreshWindow {
   fromDate: Date;
@@ -19,13 +21,14 @@ interface AsyncTailRefreshInput {
   fromDate: Date;
   toDate: Date;
   source: "matrix" | "query";
+  force?: boolean;
   strategy?: {
     recentSeedLookbackDays?: number;
     backfillLookbackDays?: number;
   };
 }
 
-const symbolLastRefreshAt = new Map<string, number>();
+const symbolNextRefreshAllowedAt = new Map<string, number>();
 const symbolRefreshInFlight = new Map<string, Promise<void>>();
 const schedulerRuns = new Set<Promise<void>>();
 
@@ -46,12 +49,12 @@ function normalizeWindowForFetch(window: TailRefreshWindow): TailRefreshWindow {
 }
 
 function shouldSkipByCooldown(symbol: string, nowMs: number): boolean {
-  const lastTriggeredAt = symbolLastRefreshAt.get(symbol);
-  if (!lastTriggeredAt) {
+  const nextAllowedAt = symbolNextRefreshAllowedAt.get(symbol);
+  if (!nextAllowedAt) {
     return false;
   }
 
-  return nowMs - lastTriggeredAt < DEFAULT_REFRESH_COOLDOWN_MS;
+  return nowMs < nextAllowedAt;
 }
 
 function logDev(message: string): void {
@@ -108,6 +111,61 @@ export function buildTailRefreshWindow(
   });
 }
 
+export function buildRefreshWindows(
+  fromDate: Date,
+  toDate: Date,
+  bounds: TradeDateBounds | undefined,
+  options?: {
+    recentSeedLookbackDays?: number;
+    backfillLookbackDays?: number;
+  },
+): TailRefreshWindow[] {
+  if (fromDate.getTime() > toDate.getTime()) {
+    return [];
+  }
+
+  if (!bounds) {
+    const seedWindow = buildTailRefreshWindow(fromDate, toDate, undefined, {
+      recentSeedLookbackDays: options?.recentSeedLookbackDays,
+    });
+    if (!seedWindow) {
+      return [];
+    }
+
+    const windows: TailRefreshWindow[] = [seedWindow];
+    const backfillWindow = buildBackfillWindowAfterSeed(
+      fromDate,
+      toDate,
+      seedWindow,
+      {
+        backfillLookbackDays: options?.backfillLookbackDays,
+      },
+    );
+    if (backfillWindow) {
+      windows.push(backfillWindow);
+    }
+    return windows;
+  }
+
+  const windows: TailRefreshWindow[] = [];
+  if (fromDate.getTime() < bounds.minTradeDate.getTime()) {
+    const frontWindow = normalizeWindowForFetch({
+      fromDate,
+      toDate: shiftDays(bounds.minTradeDate, -1),
+    });
+    if (frontWindow.fromDate.getTime() <= frontWindow.toDate.getTime()) {
+      windows.push(frontWindow);
+    }
+  }
+
+  const tailWindow = buildTailRefreshWindow(fromDate, toDate, bounds);
+  if (tailWindow) {
+    windows.push(tailWindow);
+  }
+
+  return windows;
+}
+
 function buildBackfillWindowAfterSeed(
   fromDate: Date,
   toDate: Date,
@@ -147,72 +205,64 @@ async function runAsyncTailRefresh(
   const triggeredSymbols: string[] = [];
 
   for (const symbol of input.symbols) {
-    if (symbolRefreshInFlight.has(symbol) || shouldSkipByCooldown(symbol, nowMs)) {
+    if (symbolRefreshInFlight.has(symbol) || (!input.force && shouldSkipByCooldown(symbol, nowMs))) {
       continue;
     }
 
     const symbolBounds = boundsBySymbol.get(symbol);
-    const refreshWindow = buildTailRefreshWindow(
+    const refreshWindows = buildRefreshWindows(
       input.fromDate,
       input.toDate,
       symbolBounds,
       {
         recentSeedLookbackDays: input.strategy?.recentSeedLookbackDays,
+        backfillLookbackDays: input.strategy?.backfillLookbackDays,
       },
     );
-    if (!refreshWindow) {
+    if (refreshWindows.length === 0) {
       continue;
     }
 
-    const backfillWindow = !symbolBounds
-      ? buildBackfillWindowAfterSeed(
-        input.fromDate,
-        input.toDate,
-        refreshWindow,
-        {
-          backfillLookbackDays: input.strategy?.backfillLookbackDays,
-        },
-      )
-      : null;
-
-    symbolLastRefreshAt.set(symbol, nowMs);
     triggeredSymbols.push(symbol);
+    const hadLocalData = Boolean(symbolBounds);
 
     const refreshPromise = (async () => {
+      let totalPoints = 0;
+      let failed = false;
       try {
-        const seedHistorical = await fetchHistoricalFromYahooWithResolution(
-          symbol,
-          refreshWindow.fromDate,
-          refreshWindow.toDate,
-        );
-        if (seedHistorical.points.length > 0) {
-          await upsertDailyPrices(symbol, seedHistorical.points);
-        }
-        logDev(
-          `[async-refresh-result] source=${input.source} stage=seed source-symbol=${symbol} resolved-symbol=${seedHistorical.resolvedSymbol} result-points=${seedHistorical.points.length}`,
-        );
-
-        if (backfillWindow) {
-          const backfillHistorical = await fetchHistoricalFromYahooWithResolution(
+        for (const [index, window] of refreshWindows.entries()) {
+          const historical = await fetchHistoricalFromYahooWithResolution(
             symbol,
-            backfillWindow.fromDate,
-            backfillWindow.toDate,
+            window.fromDate,
+            window.toDate,
           );
-          if (backfillHistorical.points.length > 0) {
-            await upsertDailyPrices(symbol, backfillHistorical.points);
+          totalPoints += historical.points.length;
+          if (historical.points.length > 0) {
+            await upsertDailyPrices(symbol, historical.points);
           }
+          const stage = !symbolBounds
+            ? (index === 0 ? "seed" : "backfill")
+            : (index === 0 && refreshWindows.length > 1 ? "frontfill" : "tailfill");
           logDev(
-            `[async-refresh-result] source=${input.source} stage=backfill source-symbol=${symbol} resolved-symbol=${backfillHistorical.resolvedSymbol} result-points=${backfillHistorical.points.length}`,
+            `[async-refresh-result] source=${input.source} stage=${stage} source-symbol=${symbol} resolved-symbol=${historical.resolvedSymbol} result-points=${historical.points.length}`,
           );
         }
       } catch (error) {
+        failed = true;
         logDevError(
           `[async-refresh-error] source=${input.source} symbol=${symbol} message=${toErrorMessage(error)}`,
         );
+      } finally {
+        const cooldownMs = failed
+          ? FAILED_REFRESH_RETRY_COOLDOWN_MS
+          : (!hadLocalData && totalPoints === 0)
+            ? EMPTY_SEED_RESULT_RETRY_COOLDOWN_MS
+            : DEFAULT_REFRESH_COOLDOWN_MS;
+
+        symbolNextRefreshAllowedAt.set(symbol, Date.now() + cooldownMs);
+        symbolRefreshInFlight.delete(symbol);
       }
-    })().finally(() => {
-      symbolRefreshInFlight.delete(symbol);
-    });
+    })();
 
     symbolRefreshInFlight.set(symbol, refreshPromise);
   }
@@ -243,7 +293,7 @@ export async function waitForAsyncTailRefreshForTests(): Promise<void> {
 }
 
 export function resetAsyncTailRefreshStateForTests(): void {
-  symbolLastRefreshAt.clear();
+  symbolNextRefreshAllowedAt.clear();
   symbolRefreshInFlight.clear();
   schedulerRuns.clear();
 }

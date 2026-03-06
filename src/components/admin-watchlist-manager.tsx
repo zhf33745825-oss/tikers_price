@@ -30,6 +30,13 @@ function formatDateTime(value: string | null): string {
   });
 }
 
+function escapeCsvCell(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, "\"\"")}"`;
+  }
+  return value;
+}
+
 function rowEditKey(listId: string | null, symbol: string): string {
   return `${listId ?? "none"}::${symbol}`;
 }
@@ -88,6 +95,7 @@ export function AdminWatchlistManager() {
   const [error, setError] = useState<string | null>(null);
 
   const [creatingList, setCreatingList] = useState(false);
+  const [exportingMembers, setExportingMembers] = useState(false);
   const [submittingSymbol, setSubmittingSymbol] = useState(false);
   const [savingSymbols, setSavingSymbols] = useState<Record<string, boolean>>({});
   const [listActionLoading, setListActionLoading] = useState<Record<string, boolean>>({});
@@ -573,6 +581,60 @@ export function AdminWatchlistManager() {
     }
   };
 
+  const handleExportMembers = () => {
+    if (!activeList || items.length === 0) {
+      setError("当前清单没有可导出的数据");
+      return;
+    }
+
+    setExportingMembers(true);
+    setError(null);
+
+    try {
+      const headers = [
+        "排序",
+        "股票代码",
+        "生效名称",
+        "生效地区",
+        "名称覆盖",
+        "地区覆盖",
+        "自动币种",
+        "元信息更新时间",
+      ];
+
+      const bodyRows = items.map((item, index) => ([
+        String(index + 1),
+        item.symbol,
+        item.resolvedName,
+        item.resolvedRegion,
+        item.displayName ?? "",
+        item.regionOverride ?? "",
+        item.autoCurrency ?? "",
+        formatDateTime(item.metaUpdatedAt),
+      ]));
+
+      const csvLines = [headers, ...bodyRows]
+        .map((line) => line.map((cell) => escapeCsvCell(cell)).join(","))
+        .join("\r\n");
+
+      const csvContent = `\uFEFF${csvLines}`;
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const timeLabel = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+      anchor.href = url;
+      anchor.download = `${activeList.name}_members_${timeLabel}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "导出失败");
+    } finally {
+      setExportingMembers(false);
+    }
+  };
+
   return (
     <section className="content-section">
       <div className="panel">
@@ -684,9 +746,19 @@ export function AdminWatchlistManager() {
       </div>
 
       <div className="panel">
-        <h3 className="panel-title">
-          当前清单成员管理{activeList ? `：${activeList.name}` : ""}
-        </h3>
+        <div className="admin-member-toolbar">
+          <h3 className="panel-title">
+            当前清单成员管理{activeList ? `：${activeList.name}` : ""}
+          </h3>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={handleExportMembers}
+            disabled={exportingMembers || loadingItems || items.length === 0 || !activeList}
+          >
+            {exportingMembers ? "导出中..." : "导出Excel"}
+          </button>
+        </div>
 
         <div className="admin-form-grid">
           <label className="field symbol-field">

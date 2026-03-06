@@ -14,6 +14,7 @@ vi.mock("@/lib/stock/yahoo", () => ({
 }));
 
 import {
+  buildRefreshWindows,
   buildTailRefreshWindow,
   resetAsyncTailRefreshStateForTests,
   scheduleAsyncTailRefreshForSymbols,
@@ -89,6 +90,40 @@ describe("buildTailRefreshWindow", () => {
 
     expect(window?.fromDate.toISOString()).toBe("2025-01-10T00:00:00.000Z");
     expect(window?.toDate.toISOString()).toBe("2025-01-11T00:00:00.000Z");
+  });
+});
+
+describe("buildRefreshWindows", () => {
+  it("returns frontfill window when requested range starts before local minimum", () => {
+    const windows = buildRefreshWindows(
+      date("2025-01-01"),
+      date("2025-01-10"),
+      {
+        minTradeDate: date("2025-01-05"),
+        maxTradeDate: date("2025-01-10"),
+      },
+    );
+
+    expect(windows).toHaveLength(1);
+    expect(windows[0]?.fromDate.toISOString()).toBe("2025-01-01T00:00:00.000Z");
+    expect(windows[0]?.toDate.toISOString()).toBe("2025-01-04T00:00:00.000Z");
+  });
+
+  it("returns both frontfill and tailfill windows when both boundaries are missing", () => {
+    const windows = buildRefreshWindows(
+      date("2025-01-01"),
+      date("2025-01-10"),
+      {
+        minTradeDate: date("2025-01-04"),
+        maxTradeDate: date("2025-01-07"),
+      },
+    );
+
+    expect(windows).toHaveLength(2);
+    expect(windows[0]?.fromDate.toISOString()).toBe("2025-01-01T00:00:00.000Z");
+    expect(windows[0]?.toDate.toISOString()).toBe("2025-01-03T00:00:00.000Z");
+    expect(windows[1]?.fromDate.toISOString()).toBe("2025-01-08T00:00:00.000Z");
+    expect(windows[1]?.toDate.toISOString()).toBe("2025-01-10T00:00:00.000Z");
   });
 });
 
@@ -175,6 +210,75 @@ describe("scheduleAsyncTailRefreshForSymbols", () => {
     await waitForAsyncTailRefreshForTests();
 
     expect(fetchHistoricalFromYahooWithResolutionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("bypasses cooldown when refresh is forced", async () => {
+    getTradeDateBoundsBySymbolsMock.mockResolvedValue(new Map([
+      ["AAPL", {
+        minTradeDate: date("2024-01-01"),
+        maxTradeDate: date("2025-01-10"),
+      }],
+    ]));
+    fetchHistoricalFromYahooWithResolutionMock.mockResolvedValue({
+      sourceSymbol: "AAPL",
+      resolvedSymbol: "AAPL",
+      points: [],
+    });
+
+    scheduleAsyncTailRefreshForSymbols({
+      source: "matrix",
+      symbols: ["AAPL"],
+      fromDate: date("2025-01-01"),
+      toDate: date("2025-01-20"),
+    });
+    await waitForAsyncTailRefreshForTests();
+
+    scheduleAsyncTailRefreshForSymbols({
+      source: "matrix",
+      force: true,
+      symbols: ["AAPL"],
+      fromDate: date("2025-01-01"),
+      toDate: date("2025-01-20"),
+    });
+    await waitForAsyncTailRefreshForTests();
+
+    expect(fetchHistoricalFromYahooWithResolutionMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries failed refresh after short retry cooldown", async () => {
+    getTradeDateBoundsBySymbolsMock.mockResolvedValue(new Map([
+      ["AAPL", {
+        minTradeDate: date("2024-01-01"),
+        maxTradeDate: date("2025-01-10"),
+      }],
+    ]));
+    fetchHistoricalFromYahooWithResolutionMock
+      .mockRejectedValueOnce(new Error("temporary yahoo error"))
+      .mockResolvedValueOnce({
+        sourceSymbol: "AAPL",
+        resolvedSymbol: "AAPL",
+        points: [],
+      });
+
+    scheduleAsyncTailRefreshForSymbols({
+      source: "matrix",
+      symbols: ["AAPL"],
+      fromDate: date("2025-01-01"),
+      toDate: date("2025-01-20"),
+    });
+    await waitForAsyncTailRefreshForTests();
+
+    vi.advanceTimersByTime(30_001);
+
+    scheduleAsyncTailRefreshForSymbols({
+      source: "matrix",
+      symbols: ["AAPL"],
+      fromDate: date("2025-01-01"),
+      toDate: date("2025-01-20"),
+    });
+    await waitForAsyncTailRefreshForTests();
+
+    expect(fetchHistoricalFromYahooWithResolutionMock).toHaveBeenCalledTimes(2);
   });
 
   it("prioritizes a small recent seed window before backfilling older history for empty symbols", async () => {

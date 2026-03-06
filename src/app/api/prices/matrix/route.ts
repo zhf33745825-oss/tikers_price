@@ -5,6 +5,9 @@ import { getMatrixPriceData } from "@/lib/stock/matrix";
 
 export async function GET(request: NextRequest) {
   try {
+    const refreshRaw = request.nextUrl.searchParams.get("refresh")?.trim().toLowerCase() ?? "";
+    const forceRefresh = refreshRaw === "force" || refreshRaw === "1" || refreshRaw === "true";
+
     const payload = await getMatrixPriceData({
       mode: request.nextUrl.searchParams.get("mode"),
       preset: request.nextUrl.searchParams.get("preset"),
@@ -12,6 +15,7 @@ export async function GET(request: NextRequest) {
       to: request.nextUrl.searchParams.get("to"),
       symbols: request.nextUrl.searchParams.get("symbols"),
       listId: request.nextUrl.searchParams.get("listId"),
+      forceRefresh,
     });
 
     return NextResponse.json(payload);

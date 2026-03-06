@@ -30,6 +30,7 @@ interface MatrixLoadParams {
   to?: string;
   symbols?: string;
   listId?: string;
+  forceRefresh?: boolean;
 }
 
 function formatNumber(value: number | null | undefined): string {
@@ -122,7 +123,10 @@ export function StockQueryApp() {
     params: MatrixLoadParams,
     source: MatrixLoadSource = "user",
   ) => {
-    lastMatrixParamsRef.current = params;
+    lastMatrixParamsRef.current = {
+      ...params,
+      forceRefresh: undefined,
+    };
 
     if (source === "user") {
       setMatrixLoading(true);
@@ -150,6 +154,9 @@ export function StockQueryApp() {
         searchParams.set("symbols", params.symbols ?? "");
       } else if (params.listId) {
         searchParams.set("listId", params.listId);
+      }
+      if (params.forceRefresh) {
+        searchParams.set("refresh", "force");
       }
 
       const responseRaw = await fetch(`/api/prices/matrix?${searchParams.toString()}`);
@@ -236,7 +243,13 @@ export function StockQueryApp() {
   };
 
   const refreshMatrix = async () => {
-    await loadMatrix(buildCurrentMatrixParams(), "user");
+    await loadMatrix(
+      {
+        ...buildCurrentMatrixParams(),
+        forceRefresh: true,
+      },
+      "user",
+    );
   };
 
   const handleSelectWatchlist = async (listId: string) => {

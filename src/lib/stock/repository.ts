@@ -686,6 +686,165 @@ export async function searchLocalWatchSymbols(
   return ranked.map(toLocalSymbolSuggestion);
 }
 
+export interface WatchlistSyncResult {
+  total: number;
+  createdOrLinked: number;
+  removed: number;
+  reordered: number;
+}
+
+export async function syncWatchlistSymbols(
+  listId: string,
+  orderedSymbols: string[],
+): Promise<WatchlistSyncResult> {
+  const normalizedSymbols = Array.from(
+    new Set(
+      orderedSymbols
+        .map((symbol) => symbol.trim().toUpperCase())
+        .filter(Boolean),
+    ),
+  );
+
+  if (normalizedSymbols.length === 0) {
+    throw new InputError("symbols cannot be empty");
+  }
+
+  const listExists = await prisma.watchlist.findUnique({
+    where: { id: listId },
+    select: { id: true },
+  });
+  if (!listExists) {
+    throw new InputError("watchlist not found");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const existingMembers = await tx.watchlistMember.findMany({
+      where: {
+        watchlistId: listId,
+      },
+      include: {
+        watchSymbol: {
+          select: {
+            id: true,
+            symbol: true,
+          },
+        },
+      },
+    });
+
+    const existingMemberBySymbol = new Map(
+      existingMembers.map((row) => [row.watchSymbol.symbol, row]),
+    );
+
+    const existingWatchSymbols = await tx.watchSymbol.findMany({
+      where: {
+        symbol: {
+          in: normalizedSymbols,
+        },
+      },
+      select: {
+        id: true,
+        symbol: true,
+      },
+    });
+
+    const watchSymbolIdBySymbol = new Map(
+      existingWatchSymbols.map((row) => [row.symbol, row.id]),
+    );
+
+    const missingSymbols = normalizedSymbols.filter((symbol) => !watchSymbolIdBySymbol.has(symbol));
+    if (missingSymbols.length > 0) {
+      const maxSortOrder = await tx.watchSymbol.aggregate({
+        _max: {
+          sortOrder: true,
+        },
+      });
+
+      let nextSortOrder = (maxSortOrder._max.sortOrder ?? 0) + 1;
+      for (const symbol of missingSymbols) {
+        const created = await tx.watchSymbol.create({
+          data: {
+            symbol,
+            enabled: true,
+            sortOrder: nextSortOrder,
+          },
+          select: {
+            id: true,
+            symbol: true,
+          },
+        });
+        watchSymbolIdBySymbol.set(created.symbol, created.id);
+        nextSortOrder += 1;
+      }
+    }
+
+    const requestedSet = new Set(normalizedSymbols);
+    const membersToRemove = existingMembers.filter(
+      (row) => !requestedSet.has(row.watchSymbol.symbol),
+    );
+
+    if (membersToRemove.length > 0) {
+      await tx.watchlistMember.deleteMany({
+        where: {
+          id: {
+            in: membersToRemove.map((row) => row.id),
+          },
+        },
+      });
+    }
+
+    let createdOrLinked = 0;
+    let reordered = 0;
+
+    for (const [index, symbol] of normalizedSymbols.entries()) {
+      const targetSortOrder = index + 1;
+      const existingMember = existingMemberBySymbol.get(symbol);
+      if (existingMember) {
+        const updateData: Prisma.WatchlistMemberUpdateInput = {};
+        if (existingMember.sortOrder !== targetSortOrder) {
+          updateData.sortOrder = targetSortOrder;
+          reordered += 1;
+        }
+        if (!existingMember.enabled) {
+          updateData.enabled = true;
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          await tx.watchlistMember.update({
+            where: {
+              id: existingMember.id,
+            },
+            data: updateData,
+          });
+        }
+        continue;
+      }
+
+      const watchSymbolId = watchSymbolIdBySymbol.get(symbol);
+      if (!watchSymbolId) {
+        throw new InputError(`failed to resolve symbol id: ${symbol}`);
+      }
+
+      await tx.watchlistMember.create({
+        data: {
+          watchlistId: listId,
+          watchSymbolId,
+          enabled: true,
+          sortOrder: targetSortOrder,
+        },
+      });
+      createdOrLinked += 1;
+    }
+
+    return {
+      total: normalizedSymbols.length,
+      createdOrLinked,
+      removed: membersToRemove.length,
+      reordered,
+    };
+  });
+}
+
 export async function addSymbolToWatchlist(
   listId: string,
   symbol: string,
